@@ -1,7 +1,7 @@
 # Phase 1.2 — Tier Meshes (Terraced Hill)
 
 **Milestone:** [1 · 3D City](../PLAN.md) · **Prev:** [1.1 Scene & Camera](phase-01-scene-camera-controls.md) · **Next:** [1.3 Data Binding & States](phase-03-data-binding-states.md)
-**Status:** ⚪ Not started · **Estimate:** ~1.5–2 days
+**Status:** ✅ Complete (2025 — ortho fix + 49 seeded skyline) · **Estimate:** ~1.5–2 days
 
 ## Goal
 

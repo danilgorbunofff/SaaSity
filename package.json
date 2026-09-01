@@ -37,6 +37,7 @@
     "start": "next start",
     "lint": "eslint --cache",
     "format": "prettier --write .",
-    "db:seed": "prisma db seed"
+    "db:seed": "prisma db seed",
+    "test": "tsx --test tests/**/*.test.ts"
   }
 }
