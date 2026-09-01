@@ -15,6 +15,8 @@ export interface LeaderBrandDto {
   logoUrl: string | null;
   mrrText: string | null;
   logoHidden: boolean;
+  /** Leader's public marketing URL — display-cache only, never a bidder input. */
+  leaderTargetUrl: string | null;
 }
 
 export interface PlotDto {

@@ -50,13 +50,13 @@ Pointer interaction (hover, click, select) plus the **full identification HUD**:
 
 ## Exit criteria
 
-- [ ] Hover/select/deselect loop is crisp with zero stale visual state
-- [ ] Detail card ships all fields for both `IDLE` and `LIVE` plots incl. disabled claim/bid CTA hook point and the selected-plot-only live countdown; outbid variant shows `⚠️ OUTBID: +$X to retain` with correct tier increment
-- [ ] HUD counts derived from data (survive DB edits) and the live activity meter sums only currently-`LIVE` plots' current prices (recomputed on every fetch, never a stale one-time figure)
+- [x] Hover/select/deselect loop is crisp with zero stale visual state
+- [x] Detail card ships all fields for both `IDLE` and `LIVE` plots incl. disabled claim/bid CTA hook point and the selected-plot-only live countdown; outbid variant shows `⚠️ OUTBID: +$X to retain` with correct tier increment
+- [x] HUD counts derived from data (survive DB edits) and the live activity meter sums only currently-`LIVE` plots' current prices (recomputed on every fetch, never a stale one-time figure)
 - [ ] Minimap renders 10×10 correctly, four symbol states accurate, click flies to building at close-up inspect distance
-- [ ] My Leases switcher count + dropdown accurate, each entry flies to its plot; empty state handled
-- [ ] Outbid contested toast appears on flip and its click flies to the contested plot
-- [ ] No new API endpoints — minimap + switcher derive purely from plots + `/api/me/bids` already in 1.3/M3 3.2
+- [x] My Leases switcher count + dropdown accurate, each entry flies to its plot; empty state handled
+- [x] Outbid contested toast appears on flip and its click flies to the contested plot
+- [x] No new API endpoints — minimap + switcher derive purely from plots + `/api/me/bids` already in 1.3/M3 3.2
 
 ## Out of scope / notes
 

@@ -37,6 +37,7 @@ export function serializePlot(plot: Plot & { currentCycle: AuctionCycle | null }
       logoUrl: plot.leaderLogoUrl,
       mrrText: plot.leaderMrrText,
       logoHidden: plot.leaderLogoHidden,
+      leaderTargetUrl: plot.leaderTargetUrl,
     };
     dto.leader = leader;
   }

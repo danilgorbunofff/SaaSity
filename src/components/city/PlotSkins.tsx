@@ -165,6 +165,51 @@ export function SkinEdgeGlow({
 }
 
 /* ------------------------------------------------------------------ */
+/* Interaction rings (phase 1.4): hover < selected                     */
+/* ------------------------------------------------------------------ */
+
+/** Flat ground ring: hover = faint white, selected = bright cyan. */
+export function SelectionRing({
+  size,
+  y,
+  selected,
+}: {
+  size: number;
+  y: number;
+  selected: boolean;
+}) {
+  const ref = useRef<Mesh>(null);
+  const r = size / 2 + 0.12;
+
+  useFrame(({ clock }) => {
+    if (ref.current) {
+      const mat = ref.current.material as MeshStandardMaterial;
+      if (selected) {
+        const phase = 0.5 + 0.5 * Math.sin(clock.elapsedTime * 2.2);
+        mat.emissiveIntensity = 1.6 + 0.9 * phase;
+      } else {
+        mat.emissiveIntensity = 0.55;
+      }
+    }
+  });
+
+  return (
+    <mesh ref={ref} position={[0, y, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <ringGeometry args={[r, r + (selected ? 0.09 : 0.05), 48]} />
+      <meshStandardMaterial
+        color="#04121a"
+        emissive={selected ? NEON.cyan : '#ffffff'}
+        emissiveIntensity={selected ? 1.6 : 0.55}
+        transparent
+        opacity={selected ? 0.95 : 0.45}
+        side={2}
+        toneMapped={false}
+      />
+    </mesh>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Personal identity layer - owned-leading (or outbid) plots only      */
 /* ------------------------------------------------------------------ */
 
@@ -295,9 +340,13 @@ export interface PlotSkinsProps {
   ownedLeading: boolean;
   /** Was leading earlier this cycle but has been outbid. */
   outbid: boolean;
+  /** Phase 1.4 hover highlight. */
+  hovered?: boolean;
+  /** Phase 1.4 selection highlight (stronger than hover). */
+  selected?: boolean;
 }
 
-export function PlotSkins({ plot, height, baseY, ownedLeading, outbid }: PlotSkinsProps) {
+export function PlotSkins({ plot, height, baseY, ownedLeading, outbid, hovered, selected }: PlotSkinsProps) {
   const closingSoon = useClosingSoon(plot.endAt);
   const showPersonal = ownedLeading || outbid;
   const badgeY = baseY + height + (plot.tier === 'CORE' ? 2.6 : 1.0);
@@ -311,6 +360,13 @@ export function PlotSkins({ plot, height, baseY, ownedLeading, outbid }: PlotSki
         closingSoon={closingSoon || outbid}
         height={height}
       />
+      {(hovered || selected) && (
+        <SelectionRing
+          size={TIER_MESH[plot.tier].size}
+          y={baseY + 0.05}
+          selected={!!selected}
+        />
+      )}
       {showPersonal && (
         <group>
           <Beacon baseY={baseY} height={height} outbid={outbid} />

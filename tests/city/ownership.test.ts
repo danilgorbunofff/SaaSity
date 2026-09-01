@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   isOwnedLeading,
   deriveOutbidPlotIds,
+  mergeOutbidPlotIds,
   isClosingSoon,
   CLOSING_SOON_MS,
 } from '../../src/lib/city/ownership';
@@ -74,4 +75,42 @@ test('isClosingSoon boundary (3 minutes)', () => {
   assert.equal(isClosingSoon(new Date(now + CLOSING_SOON_MS).toISOString(), now), false);
   assert.equal(isClosingSoon(new Date(now + CLOSING_SOON_MS - 1).toISOString(), now), true);
   assert.equal(isClosingSoon(new Date(now - 1).toISOString(), now), false);
+});
+
+test('mergeOutbidPlotIds: flips stick across refetches while rival still leads', () => {
+  const myBids = new Set([BID_A]);
+  const next = new Map([['p1', plot({ id: 'p1', status: 'LIVE', currentLeaderPreBidId: BID_B })]]);
+  const out = mergeOutbidPlotIds(new Set(['p1']), new Set(), next, myBids);
+  assert.ok(out.has('p1'), 'previously-outbid plot stays outbid on refetch');
+});
+
+test('mergeOutbidPlotIds: prune when we re-take the lead', () => {
+  const myBids = new Set([BID_A]);
+  const next = new Map([['p1', plot({ id: 'p1', status: 'LIVE', currentLeaderPreBidId: BID_A })]]);
+  const out = mergeOutbidPlotIds(new Set(['p1']), new Set(), next, myBids);
+  assert.equal(out.has('p1'), false);
+});
+
+test('mergeOutbidPlotIds: prune when cycle ends (LIVE -> IDLE)', () => {
+  const myBids = new Set([BID_A]);
+  const next = new Map([['p1', plot({ id: 'p1', status: 'IDLE' })]]);
+  const out = mergeOutbidPlotIds(new Set(['p1']), new Set(), next, myBids);
+  assert.equal(out.has('p1'), false);
+});
+
+test('mergeOutbidPlotIds: prune when plot vanishes from snapshot', () => {
+  const myBids = new Set([BID_A]);
+  const next = new Map<string, PlotDto>();
+  const out = mergeOutbidPlotIds(new Set(['p1']), new Set(), next, myBids);
+  assert.equal(out.has('p1'), false);
+});
+
+test('mergeOutbidPlotIds: new flips are added to the sticky set', () => {
+  const myBids = new Set([BID_A]);
+  const next = new Map([
+    ['p1', plot({ id: 'p1', status: 'LIVE', currentLeaderPreBidId: BID_B })],
+    ['p2', plot({ id: 'p2', status: 'LIVE', currentLeaderPreBidId: BID_C })],
+  ]);
+  const out = mergeOutbidPlotIds(new Set(['p1']), new Set(['p2']), next, myBids);
+  assert.ok(out.has('p1') && out.has('p2'));
 });

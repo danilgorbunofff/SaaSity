@@ -47,6 +47,33 @@ export function deriveOutbidPlotIds(
   return outbid;
 }
 
+/**
+ * Sticky outbid merge: flips accumulate across snapshots so the amber badge
+ * persists on every refetch (a rival's lead is still a rival's lead). A plot
+ * leaves the set only when we re-take the lead, the cycle ends (LIVE -> IDLE
+ * = expiry, not contention), or the plot vanishes from the snapshot.
+ */
+export function mergeOutbidPlotIds(
+  prevOutbid: Set<string>,
+  flips: Set<string>,
+  nextPlots: Map<string, PlotDto>,
+  myPreBidIds: Set<string>,
+): Set<string> {
+  const merged = new Set(prevOutbid);
+  flips.forEach((id) => merged.add(id));
+  for (const id of merged) {
+    const p = nextPlots.get(id);
+    if (
+      !p ||
+      p.status !== 'LIVE' ||
+      (!!p.currentLeaderPreBidId && myPreBidIds.has(p.currentLeaderPreBidId))
+    ) {
+      merged.delete(id);
+    }
+  }
+  return merged;
+}
+
 /** Closing-soon threshold: any time left under 3 minutes (soft-close window). */
 export const CLOSING_SOON_MS = 3 * 60 * 1000;
 

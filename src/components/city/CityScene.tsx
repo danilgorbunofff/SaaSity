@@ -13,6 +13,12 @@ import { TerracedHill } from './TerracedHill';
 import { Plot, plotHeight } from './TierMeshes';
 import { plinthY } from '@/lib/city/grid-to-world';
 import { PlotSkins } from './PlotSkins';
+import { TopStrip } from './hud/TopStrip';
+import { DetailCard } from './hud/DetailCard';
+import { MyLeasesPill } from './hud/MyLeasesPill';
+import { Minimap } from './hud/Minimap';
+import { OutbidToast } from './hud/OutbidToast';
+import { PlotA11yList } from './hud/PlotA11yList';
 import type { PlotDto } from '@/types/api';
 
 function ControlsRig() {
@@ -119,6 +125,8 @@ function CityPlots() {
   const plotsMap = useCityStore((s) => s.plots);
   const myPreBidIds = useCityStore((s) => s.myPreBidIds);
   const outbidPlotIds = useCityStore((s) => s.outbidPlotIds);
+  const hoveredPlotId = useCityStore((s) => s.hoveredPlotId);
+  const selectedPlotId = useCityStore((s) => s.selectedPlotId);
   const seed = useMemo(() => generateInitialGrid(), []);
   const hasData = plotsMap.size > 0;
 
@@ -143,6 +151,8 @@ function CityPlots() {
                   baseY={0}
                   ownedLeading={owned}
                   outbid={outbid}
+                  hovered={hoveredPlotId === p.id}
+                  selected={selectedPlotId === p.id}
                 />
               </group>
             )}
@@ -154,7 +164,9 @@ function CityPlots() {
 }
 
 export function CityScene() {
+  const clearSelection = useCityStore((s) => s.setSelectedPlotId);
   return (
+    <div className="absolute inset-0">
     <Canvas
       dpr={IS_LOW_POWER ? [1, 1.5] : [1, 2]}
       gl={{ antialias: !IS_LOW_POWER, powerPreference: 'high-performance' }}
@@ -168,6 +180,7 @@ export function CityScene() {
       }}
       orthographic
       style={{ background: SCENE.background }}
+      onPointerMissed={() => clearSelection(null)}
     >
       <color attach="background" args={[SCENE.background]} />
       <fog attach="fog" args={[SCENE.background, SCENE.fogNear, SCENE.fogFar]} />
@@ -196,6 +209,15 @@ export function CityScene() {
       <LoadingChip />
       <ErrorChip />
       <ControlsRig />
-    </Canvas>
+      </Canvas>
+
+      {/* Phase 1.4 DOM HUD — siblings of the WebGL canvas */}
+      <TopStrip />
+      <DetailCard />
+      <MyLeasesPill />
+      <Minimap />
+      <OutbidToast />
+      <PlotA11yList />
+    </div>
   );
 }

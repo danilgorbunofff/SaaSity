@@ -9,8 +9,10 @@
 import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import type { Mesh } from 'three';
+import type { ThreeEvent } from '@react-three/fiber';
 import { plinthY } from '@/lib/city/grid-to-world';
 import { seededRange } from '@/lib/city/seeded';
+import { useCityStore } from '@/lib/city/store';
 
 /** Footprints and height ranges per tier (phase-02 spec). */
 export const TIER_MESH = {
@@ -147,16 +149,53 @@ function AntennaTip({ y }: { y: number }) {
   );
 }
 
+/** Max pointer travel (px) between down and up that still counts as a click. */
+const DRAG_GUARD_PX = 5;
+
 export function Plot({ plot }: { plot: PlotMeshData }) {
   const height = plotHeight(plot.id, plot.tier);
   const px = plot.originX + plot.spanX / 2 - 5;
   const pz = plot.originY + plot.spanY / 2 - 5;
   const baseY = plinthY(plot.tier);
 
-  // Pointer handlers arrive in phase 1.4 — attaching no-ops here would make
-  // R3F raycast all 49 plots on every pointer move for nothing.
+  // Phase 1.4 interaction. Pointer handlers live here; the visual hover/
+  // selection ring is wired in CityScene -> PlotSkins via store selectors,
+  // so only the two affected plots re-render, not all 49.
+  const setHoveredPlotId = useCityStore((s) => s.setHoveredPlotId);
+  const setSelectedPlotId = useCityStore((s) => s.setSelectedPlotId);
+  const downPos = useRef<{ x: number; y: number } | null>(null);
+
+  const onPointerOver = (e: ThreeEvent<PointerEvent>) => {
+    e.stopPropagation();
+    setHoveredPlotId(plot.id);
+    document.body.style.cursor = 'pointer';
+  };
+  const onPointerOut = () => {
+    setHoveredPlotId(null);
+    document.body.style.cursor = 'auto';
+  };
+  const onPointerDown = (e: ThreeEvent<PointerEvent>) => {
+    downPos.current = { x: e.clientX, y: e.clientY };
+  };
+  const onPointerUp = (e: ThreeEvent<PointerEvent>) => {
+    const d = downPos.current;
+    downPos.current = null;
+    if (!d) return;
+    // Orbit drag must not select: require near-stationary press.
+    if (Math.hypot(e.clientX - d.x, e.clientY - d.y) <= DRAG_GUARD_PX) {
+      e.stopPropagation();
+      setSelectedPlotId(plot.id);
+    }
+  };
+
   return (
-    <group position={[px, baseY, pz]}>
+    <group
+      position={[px, baseY, pz]}
+      onPointerOver={onPointerOver}
+      onPointerOut={onPointerOut}
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
+    >
       {plot.tier === 'OUTER' && <OuterTower height={height} />}
       {plot.tier === 'MID' && <MidTower id={plot.id} height={height} />}
       {plot.tier === 'CORE' && <CoreSpire height={height} />}

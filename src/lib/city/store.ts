@@ -7,7 +7,7 @@
  */
 
 import { create } from 'zustand';
-import { deriveOutbidPlotIds } from './ownership';
+import { deriveOutbidPlotIds, mergeOutbidPlotIds } from './ownership';
 import type { PlotDto } from '@/types/api';
 
 export interface CityState {
@@ -15,12 +15,18 @@ export interface CityState {
   myPreBidIds: Set<string>;
   /** Plots where we WERE leading and a rival took the lead this cycle. */
   outbidPlotIds: Set<string>;
+  /** Single source of truth for the inspected plot (1.4). null = none. */
+  selectedPlotId: string | null;
+  /** Currently hovered plot (1.4) — hover highlight + pointer cursor. */
+  hoveredPlotId: string | null;
   loading: boolean;
   error: string | null;
   lastFetchedAt: number | null;
 
   setPlots: (plots: PlotDto[]) => void;
   setMyPreBids: (ids: string[]) => void;
+  setSelectedPlotId: (plotId: string | null) => void;
+  setHoveredPlotId: (plotId: string | null) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   markFetched: () => void;
@@ -30,6 +36,8 @@ export const useCityStore = create<CityState>()((set) => ({
   plots: new Map<string, PlotDto>(),
   myPreBidIds: new Set<string>(),
   outbidPlotIds: new Set<string>(),
+  selectedPlotId: null,
+  hoveredPlotId: null,
   loading: false,
   error: null,
   lastFetchedAt: null,
@@ -39,11 +47,20 @@ export const useCityStore = create<CityState>()((set) => ({
       const next = new Map(plots.map((p) => [p.id, p]));
       // Outbid detection: we led the previous snapshot of a LIVE cycle but
       // the leader id changed while the cycle is still open. Cycle END
-      // (LIVE -> IDLE) is a normal lease expiry, not an outbid.
-      const outbid = deriveOutbidPlotIds(state.plots, next, state.myPreBidIds);
+      // (LIVE -> IDLE) is a normal lease expiry, not an outbid. Flips MERGE
+      // into the existing set (sticky) — a rival's lead persists on every
+      // refetch until we re-take the lead or the cycle ends.
+      const flips = deriveOutbidPlotIds(state.plots, next, state.myPreBidIds);
+      const outbid = mergeOutbidPlotIds(state.outbidPlotIds, flips, next, state.myPreBidIds);
+      // Fade selection when the plot vanishes from the city (keeps HUD honest).
+      if (state.selectedPlotId && !next.has(state.selectedPlotId)) {
+        return { plots: next, outbidPlotIds: outbid, selectedPlotId: null };
+      }
       return { plots: next, outbidPlotIds: outbid };
     }),
   setMyPreBids: (ids) => set({ myPreBidIds: new Set(ids) }),
+  setSelectedPlotId: (plotId) => set({ selectedPlotId: plotId }),
+  setHoveredPlotId: (plotId) => set({ hoveredPlotId: plotId }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
   markFetched: () => set({ lastFetchedAt: Date.now() }),

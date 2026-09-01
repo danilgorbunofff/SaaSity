@@ -12,17 +12,19 @@ export interface CitySnapshot {
 }
 
 export async function fetchCitySnapshot(): Promise<CitySnapshot> {
-  const [plotsRes, meRes] = await Promise.all([
-    fetch('/api/plots', { cache: 'no-store' }),
-    fetch('/api/me/bids', { cache: 'no-store' }),
+  const [data, myPreBidIds] = await Promise.all([
+    fetch('/api/plots', { cache: 'no-store' }).then(async (res) => {
+      if (!res.ok) throw new Error(`plots fetch failed: ${res.status}`);
+      return res.json() as Promise<PlotsResponseDto>;
+    }),
+    // me/bids failing is non-fatal in every way (anonymous visitor, HTTP
+    // error, or network rejection) — degrade gracefully to an empty set.
+    fetch('/api/me/bids', { cache: 'no-store' })
+      .then(async (res) =>
+        res.ok ? ((await res.json()) as { preBidIds: string[] }).preBidIds : [],
+      )
+      .catch(() => [] as string[]),
   ]);
 
-  if (!plotsRes.ok) {
-    throw new Error(`plots fetch failed: ${plotsRes.status}`);
-  }
-  // me/bids failing is non-fatal (anonymous visitor) — degrade gracefully.
-  const myPreBidIds = meRes.ok ? ((await meRes.json()) as { preBidIds: string[] }).preBidIds : [];
-
-  const data = (await plotsRes.json()) as PlotsResponseDto;
   return { plots: data.plots, myPreBidIds };
 }

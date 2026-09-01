@@ -64,6 +64,9 @@ model Plot {
   leaderLogoUrl       String?
   leaderMrrText       String?
   leaderLogoHidden    Boolean @default(false)
+  // Leader's public marketing URL, shown on the detail card ("Visit site").
+  // Public display-cache field, not part of PreBid privacy.
+  leaderTargetUrl     String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
