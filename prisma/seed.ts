@@ -1,8 +1,8 @@
-﻿import "dotenv/config";
-import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "../src/generated/prisma/client";
-import { generateInitialGrid } from "../src/lib/grid";
-import { checkGridIntegrity } from "../src/lib/grid-integrity";
+import 'dotenv/config';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from '../src/generated/prisma/client';
+import { generateInitialGrid } from '../src/lib/grid';
+import { checkGridIntegrity } from '../src/lib/grid-integrity';
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
@@ -12,7 +12,7 @@ async function main() {
   const grid = generateInitialGrid();
   const integrity = checkGridIntegrity(grid);
   if (!integrity.ok) {
-    console.error("GRID INTEGRITY CHECK FAILED - aborting seed:");
+    console.error('GRID INTEGRITY CHECK FAILED - aborting seed:');
     for (const e of integrity.errors) console.error(`  - ${e}`);
     process.exit(1);
   }
@@ -37,7 +37,7 @@ async function main() {
         originY: p.originY,
         spanX: p.spanX,
         spanY: p.spanY,
-        status: "IDLE",
+        status: 'IDLE',
       },
     });
   }

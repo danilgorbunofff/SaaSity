@@ -6,7 +6,7 @@
 
 export interface PlotSeed {
   id: string;
-  tier: "CORE" | "MID" | "OUTER";
+  tier: 'CORE' | 'MID' | 'OUTER';
   originX: number;
   originY: number;
   spanX: number;
@@ -18,8 +18,8 @@ export function generateInitialGrid(): PlotSeed[] {
 
   // 1. Center Core (4x4) — 1 plot
   plots.push({
-    id: "core-01",
-    tier: "CORE",
+    id: 'core-01',
+    tier: 'CORE',
     originX: 3,
     originY: 3,
     spanX: 4,
@@ -43,8 +43,8 @@ export function generateInitialGrid(): PlotSeed[] {
   ];
   midOrigins.forEach((pos, i) => {
     plots.push({
-      id: `mid-${String(i + 1).padStart(2, "0")}`,
-      tier: "MID",
+      id: `mid-${String(i + 1).padStart(2, '0')}`,
+      tier: 'MID',
       originX: pos.x,
       originY: pos.y,
       spanX: 2,
@@ -58,8 +58,8 @@ export function generateInitialGrid(): PlotSeed[] {
     for (let x = 0; x < 10; x++) {
       if (x === 0 || x === 9 || y === 0 || y === 9) {
         plots.push({
-          id: `outer-${String(outerCount++).padStart(2, "0")}`,
-          tier: "OUTER",
+          id: `outer-${String(outerCount++).padStart(2, '0')}`,
+          tier: 'OUTER',
           originX: x,
           originY: y,
           spanX: 1,

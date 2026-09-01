@@ -1,5 +1,5 @@
-import type { Plot, AuctionCycle } from "@/generated/prisma/client";
-import type { PlotDto, LeaderBrandDto, BidTickDto } from "@/types/api";
+import type { Plot, AuctionCycle } from '@/generated/prisma/client';
+import type { PlotDto, LeaderBrandDto, BidTickDto } from '@/types/api';
 
 /**
  * THE public plot serializer. Every consumer (REST in 0.3, SSE feed in 2.4)
@@ -9,9 +9,7 @@ import type { PlotDto, LeaderBrandDto, BidTickDto } from "@/types/api";
  * brand/identity are structurally absent — not gated by status, just never
  * selected. Only the leader's PUBLIC brand snapshot lands in the payload.
  */
-export function serializePlot(
-  plot: Plot & { currentCycle: AuctionCycle | null },
-): PlotDto {
+export function serializePlot(plot: Plot & { currentCycle: AuctionCycle | null }): PlotDto {
   const base: PlotDto = {
     id: plot.id,
     tier: plot.tier,
@@ -22,7 +20,7 @@ export function serializePlot(
     status: plot.status,
   };
 
-  if (plot.status !== "LIVE" || !plot.currentCycle) return base;
+  if (plot.status !== 'LIVE' || !plot.currentCycle) return base;
 
   const dto: PlotDto = {
     ...base,
@@ -47,7 +45,7 @@ export function serializePlot(
 
 /** Public bid-ledger tick — never includes bidderId or maxBid data. */
 export function serializeBidTick(
-  bid: Pick<BidRow, "id" | "amountCents" | "isProxy" | "createdAt">,
+  bid: Pick<BidRow, 'id' | 'amountCents' | 'isProxy' | 'createdAt'>,
 ): BidTickDto {
   return {
     id: bid.id,

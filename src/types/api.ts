@@ -4,9 +4,9 @@
  * are structurally absent from every public payload.
  */
 
-import type { PlotTier } from "@/lib/tiers";
+import type { PlotTier } from '@/lib/tiers';
 
-export type PlotStatusDto = "IDLE" | "LIVE";
+export type PlotStatusDto = 'IDLE' | 'LIVE';
 
 export interface LeaderBrandDto {
   companyName: string | null;

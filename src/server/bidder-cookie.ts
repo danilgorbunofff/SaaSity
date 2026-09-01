@@ -1,5 +1,5 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
-import { cookies } from "next/headers";
+import { createHmac, timingSafeEqual } from 'node:crypto';
+import { cookies } from 'next/headers';
 
 /**
  * Anonymous bidder identity — HMAC-signed httpOnly cookie, NO Bidder table.
@@ -7,7 +7,7 @@ import { cookies } from "next/headers";
  * Reused by every later milestone (M2 claim/bid/prebid, M3 Stripe pre-auth).
  */
 
-const COOKIE_NAME = "saasity_bidder";
+const COOKIE_NAME = 'saasity_bidder';
 const TTL_SECONDS = 60 * 60 * 24 * 365; // ~1 year
 const VERSION = 1;
 
@@ -21,25 +21,23 @@ export interface BidderPayload {
 function getSecret(): string {
   const secret = process.env.BIDDER_COOKIE_SECRET;
   if (!secret || secret.length < 32) {
-    throw new Error(
-      "BIDDER_COOKIE_SECRET must be set to a random 32+ byte hex string",
-    );
+    throw new Error('BIDDER_COOKIE_SECRET must be set to a random 32+ byte hex string');
   }
   return secret;
 }
 
 function sign(data: string): string {
-  return createHmac("sha256", getSecret()).update(data).digest("base64url");
+  return createHmac('sha256', getSecret()).update(data).digest('base64url');
 }
 
 export function serializeBidderCookie(payload: BidderPayload): string {
-  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
   return `${body}.${sign(body)}`;
 }
 
 export function parseBidderCookie(raw: string | undefined): BidderPayload | null {
   if (!raw) return null;
-  const dot = raw.lastIndexOf(".");
+  const dot = raw.lastIndexOf('.');
   if (dot <= 0) return null;
   const body = raw.slice(0, dot);
   const sig = raw.slice(dot + 1);
@@ -49,9 +47,7 @@ export function parseBidderCookie(raw: string | undefined): BidderPayload | null
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
 
   try {
-    const payload = JSON.parse(
-      Buffer.from(body, "base64url").toString("utf8"),
-    ) as BidderPayload;
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as BidderPayload;
     if (payload.v !== VERSION || !payload.bidderId) return null;
     const age = (Date.now() - payload.issuedAt) / 1000;
     if (age > TTL_SECONDS) return null;
@@ -86,10 +82,10 @@ export async function getOrCreateBidderPayload(): Promise<BidderPayload> {
     name: COOKIE_NAME,
     value: serializeBidderCookie(fresh),
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
     maxAge: TTL_SECONDS,
-    path: "/",
+    path: '/',
   });
   return fresh;
 }

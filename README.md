@@ -1,36 +1,65 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SaaSity
 
-## Getting Started
+A 10×10 isometric cyberpunk city where SaaS founders bid in recurring timed auctions for time-limited billboard-plot leases. Win a plot, your startup's name, tagline, link, and logo light up the skyline until the next auction cycle takes it.
 
-First, run the development server:
+## How it works
+
+- **49 plots** on a 10×10 grid — 36 outer (1×1), 12 mid-district (2×2), 1 core spire (4×4).
+- Plots are leased via **timed auctions with proxy pre-bidding, soft-close anti-sniping (+3 min), and per-cycle floor-price resets**.
+- Lease cycles rotate continuously: winners' brand assets go live, losing pre-auth holds are released, and the next cycle opens at the tier floor.
+
+### Tier economics
+
+| Tier  | Span | Cycle    | Floor price | Bid step |
+| ----- | ---- | -------- | ----------- | -------- |
+| OUTER | 1×1  | 6 hours  | $1.00       | +$0.50   |
+| MID   | 2×2  | 12 hours | $5.00       | +$1.00   |
+| CORE  | 4×4  | 24 hours | $25.00      | +$5.00   |
+
+## Tech stack
+
+- **Next.js** (App Router, TypeScript) · **Tailwind CSS** · **Three.js** + **@react-three/fiber** + **@react-three/drei**
+- **PostgreSQL** + **Prisma 7** · **Stripe** (checkout + pre-auth captures) · **Zustand** · **canvas-confetti**
+- Live plot updates via SSE
+
+## Getting started
 
 ```bash
+# 1. Install
+npm install
+
+# 2. Configure env
+cp .env.example .env
+#    Fill in DATABASE_URL (PostgreSQL) and BIDDER_COOKIE_SECRET
+
+# 3. Apply schema and seed the 49 plots
+npx prisma migrate deploy
+npm run db:seed
+
+# 4. Run
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000 to see the city grid.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment variables
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variable                                                        | Required         | Description                                       |
+| --------------------------------------------------------------- | ---------------- | ------------------------------------------------- |
+| `DATABASE_URL`                                                  | yes              | PostgreSQL connection string                      |
+| `BIDDER_COOKIE_SECRET`                                          | yes              | HMAC secret for anonymous bidder identity cookies |
+| Stripe keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, ...) | later milestones | Payments                                          |
 
-## Learn More
+## Project layout
 
-To learn more about Next.js, take a look at the following resources:
+```
+src/app/           Next.js App Router (pages + API routes)
+src/server/        Prisma client, serializers, bidder identity
+src/lib/           Grid geometry, tier economics, integrity checks
+prisma/            Schema + seed
+docs/plans/        Milestone plans (M0..M5)
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Docs
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Milestone roadmap and detailed phase plans live in [`docs/plans/`](docs/plans/).

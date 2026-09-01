@@ -1,4 +1,4 @@
-import { generateInitialGrid, type PlotSeed } from "./grid";
+import { generateInitialGrid, type PlotSeed } from './grid';
 
 export interface GridIntegrityResult {
   ok: boolean;
@@ -23,7 +23,9 @@ export function checkGridIntegrity(plots: PlotSeed[] = generateInitialGrid()): G
 
   for (const p of plots) {
     if (p.spanX !== expectedSpan[p.tier] || p.spanY !== expectedSpan[p.tier]) {
-      errors.push(`${p.id}: ${p.tier} span ${p.spanX}x${p.spanY}, expected ${expectedSpan[p.tier]}x${expectedSpan[p.tier]}`);
+      errors.push(
+        `${p.id}: ${p.tier} span ${p.spanX}x${p.spanY}, expected ${expectedSpan[p.tier]}x${expectedSpan[p.tier]}`,
+      );
     }
     if (seen.has(p.id)) errors.push(`duplicate id: ${p.id}`);
     seen.set(p.id, p.id);

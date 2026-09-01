@@ -40,7 +40,11 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-/src/generated/prisma
-
 # generated prisma client
 src/generated
+
+# tool caches
+.impeccable/
+
+# eslint cache
+.eslintcache
