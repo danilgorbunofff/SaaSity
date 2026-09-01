@@ -4,7 +4,7 @@ Roadmap for **SaaSity**: a 10x10 isometric cyberpunk city where SaaS founders bi
 
 > **Grid:** unchanged from the original spec — 36 Outer (1x1) + 12 Mid (2x2) + 1 Core (4x4) = 49 plots, 100 cells, zero gaps/overlaps
 > **Per-cycle floor economics (worst case, zero contested bids, recurs every cycle):** 36 x $1.00 (Outer, 6h) + 12 x $5.00 (Mid, 12h) + 1 x $25.00 (Core, 24h) = **$121 / full rotation**, uncapped upside from live bidding wars — replaces the old one-time $3,831 ceiling with recurring, floor-bounded-below revenue
-> **Estimated effort:** ~30–32 working days, finalized by summing all 25 phase files' `**Estimate:**` lines (M0 2.5d + M1 6–6.5d + M2 8.5–9d + M3 5.5d + M4 4.5–5d + M5 3–3.5d) — up from the original ~21–24.5 day one-time-sale estimate; the auction/proxy-bid/pre-auth engine is materially more complex than a single Stripe Checkout redirect
+> **Estimated effort:** ~31–34 working days, finalized by summing all 25 phase files' `**Estimate:**` lines (M0 2.5d + M1 7–8d + M2 8.5–9d + M3 5.5d + M4 4.5–5d + M5 3–3.5d) — up from the original ~21–24.5 day one-time-sale estimate; the auction/proxy-bid/pre-auth engine plus the terraced hill & identification system add ~1–1.5d to M1 alone
 
 ## Navigation
 
