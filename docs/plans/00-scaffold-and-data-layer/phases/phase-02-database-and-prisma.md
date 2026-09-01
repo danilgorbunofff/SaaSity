@@ -1,7 +1,7 @@
 # Phase 0.2 — Database & Prisma
 
 **Milestone:** [0 · Scaffold & Data Layer](../PLAN.md) · **Prev:** [0.1 Repo & Tooling](phase-01-repo-and-tooling.md) · **Next:** [0.3 Seed & Read API](phase-03-seed-and-read-api.md)
-**Status:** ⚪ Not started · **Estimate:** ~1 day
+**Status:** ✅ Done (2026-09-01) · **Estimate:** ~1 day
 
 ## Goal
 

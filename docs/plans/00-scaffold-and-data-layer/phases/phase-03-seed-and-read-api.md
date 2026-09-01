@@ -1,7 +1,7 @@
 # Phase 0.3 — Seed & Read API
 
 **Milestone:** [0 · Scaffold & Data Layer](../PLAN.md) · **Prev:** [0.2 Database & Prisma](phase-02-database-and-prisma.md) · **Next:** [Milestone 1](../../01-3d-city/PLAN.md)
-**Status:** ⚪ Not started · **Estimate:** ~1 day
+**Status:** ✅ Done (2026-09-01) · **Estimate:** ~1 day
 
 ## Goal
 

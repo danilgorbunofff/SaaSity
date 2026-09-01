@@ -1,7 +1,7 @@
 # Milestone 0 — Scaffold & Data Layer
 
 **Back:** [All milestones](../README.md) · **Next:** [01 · 3D City](../01-3d-city/PLAN.md)
-**Status:** ⚪ Not started
+**Status:** ✅ Done (2026-09-01)
 
 ## Objective
 

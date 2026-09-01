@@ -1,7 +1,7 @@
 # Phase 0.1 — Repo & Tooling
 
 **Milestone:** [0 · Scaffold & Data Layer](../PLAN.md) · **Next:** [0.2 Database & Prisma](phase-02-database-and-prisma.md)
-**Status:** ⚪ Not started · **Estimate:** ~0.5 day
+**Status:** ✅ Done (2026-09-01) · **Estimate:** ~0.5 day
 
 ## Goal
 
