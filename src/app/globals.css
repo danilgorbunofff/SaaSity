@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+/* SaaSity brand palette — deep-black base, neon cyan/magenta accents. */
+:root {
+  --background: #050508;
+  --foreground: #e8f6ff;
+  --surface: #0b0e14;
+  --neon-cyan: #00f0ff;
+  --neon-magenta: #ff0055;
+  --muted: #6b7a8c;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-neon-cyan: var(--neon-cyan);
+  --color-neon-magenta: var(--neon-magenta);
+  --color-muted: var(--muted);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}

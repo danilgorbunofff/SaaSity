@@ -1,0 +1,172 @@
+// SaaSity — auction/lease model.
+// Plots are never sold: they cycle forever between IDLE (no open cycle) and
+// LIVE (an active AuctionCycle with a leading PreBid). Tier economics live in
+// src/lib/tiers.ts, not here — each cycle snapshots its tier's floor/increment
+// at creation (clean-slate reset, no cross-cycle price escalation).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum PlotTier {
+  OUTER
+  MID
+  CORE
+}
+
+enum PlotStatus {
+  IDLE
+  LIVE
+}
+
+enum CycleStatus {
+  OPEN
+  RESOLVING
+  RESOLVED
+  CANCELLED
+}
+
+enum PreBidStatus {
+  ACTIVE
+  WON
+  LOST
+  CANCELLED
+  EXPIRED
+}
+
+model Plot {
+  id      String   @id
+  tier    PlotTier
+  originX Int
+  originY Int
+  spanX   Int
+  spanY   Int
+
+  status PlotStatus @default(IDLE)
+
+  currentCycleId String? @unique
+  currentCycle   AuctionCycle? @relation("PlotCurrentCycle", fields: [currentCycleId], references: [id])
+  // Denormalized pointer to the current leading PreBid (display cache,
+  // maintained transactionally by the M2 engine — no FK by design).
+  currentLeaderPreBidId String?
+
+  // Current leader's PUBLIC brand snapshot (display cache, no secrets here —
+  // PreBid.maxBidCents is the only private field in the system and it never
+  // lands on Plot).
+  leaderCompanyName   String?
+  leaderTagline       String?
+  leaderTwitterHandle String?
+  leaderLogoUrl       String?
+  leaderMrrText       String?
+  leaderLogoHidden    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cycles  AuctionCycle[]
+  preBids PreBid[]
+  bids    Bid[]
+
+  @@index([status])
+  @@index([originX, originY])
+  @@index([tier])
+}
+
+model AuctionCycle {
+  id     String      @id @default(cuid())
+  plotId String
+  plot   Plot        @relation(fields: [plotId], references: [id])
+  status CycleStatus @default(OPEN)
+
+  // Snapshot at creation (clean-slate rule) — never derived from lib/tiers
+  // after this point.
+  floorPriceCents Int
+  incrementCents  Int
+  durationMinutes Int
+
+  startedAt DateTime @default(now())
+  endAt     DateTime
+
+  // Soft-close bookkeeping: +3min per triggered extension, capped in code.
+  softCloseExtensions Int @default(0)
+
+  // Set by the resolution worker.
+  clearingPriceCents Int?
+  resolvedAt         DateTime?
+  winnerPreBidId     String?
+
+  // Display cache maintained transactionally by the M2 engine on every bid:
+  // floor when a single bidder; min(leader.maxBid, second.maxBid + increment)
+  // otherwise. Null until first claim/bid.
+  currentPriceCents Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  preBids PreBid[]
+  bids    Bid[]
+
+  // Inverse of Plot.currentCycle ("which cycle is this plot currently running")
+  currentForPlot Plot? @relation("PlotCurrentCycle")
+
+  @@index([status, endAt])
+  @@index([plotId, status])
+}
+
+// The single bidding primitive: claims, manual bids and scheduled proxy
+// pre-bids all create/raise a PreBid (claim = pre-bid at tier floor on an
+// IDLE plot, which spins up its cycle).
+model PreBid {
+  id      String        @id @default(cuid())
+  cycleId String? // null = targets the next not-yet-created cycle on this plot
+  cycle   AuctionCycle? @relation(fields: [cycleId], references: [id])
+  plotId  String
+  plot    Plot          @relation(fields: [plotId], references: [id])
+
+  // Anonymous bidder identity from the HMAC-signed cookie (no Bidder table).
+  bidderId         String
+  stripeCustomerId String?
+
+  // Stripe pre-authorization for maxBid (PaymentIntent, capture_method=manual),
+  // created at cycle-attach time (7-day hold limit).
+  stripePaymentIntentId String?
+
+  // PRIVATE — never serialized into any public payload.
+  maxBidCents Int
+
+  status PreBidStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bids Bid[]
+
+  @@index([cycleId, status])
+  @@index([plotId, bidderId])
+  @@index([bidderId, status])
+}
+
+// Append-only audit ledger of price ticks. amountCents is the tick amount,
+// never a bidder's maxBid.
+model Bid {
+  id          String       @id @default(cuid())
+  cycleId     String
+  cycle       AuctionCycle @relation(fields: [cycleId], references: [id])
+  plotId      String // denormalized for fast per-plot ledger queries
+  plot        Plot         @relation(fields: [plotId], references: [id])
+  preBidId    String?
+  preBid      PreBid?      @relation(fields: [preBidId], references: [id])
+  bidderId    String
+  amountCents Int
+  isProxy     Boolean      @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([cycleId, createdAt])
+  @@index([plotId, createdAt])
+}
