@@ -1,5 +1,5 @@
-import CityPlaceholder from '@/components/city/CityPlaceholder';
+import { CityViewport } from '@/components/city/CityViewport';
 
 export default function Home() {
-  return <CityPlaceholder />;
+  return <CityViewport />;
 }

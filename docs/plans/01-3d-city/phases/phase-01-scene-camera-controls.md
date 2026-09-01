@@ -1,7 +1,7 @@
 # Phase 1.1 — Scene, Camera & Controls (Terraced Hill)
 
 **Milestone:** [1 · 3D City](../PLAN.md) · **Prev:** [Milestone 0](../../00-scaffold-and-data-layer/PLAN.md) · **Next:** [1.2 Tier Meshes](phase-02-tier-meshes.md)
-**Status:** ⚪ Not started · **Estimate:** ~1–1.5 days
+**Status:** ✅ Complete (2025 implementation: config module, ziggurat slabs + retaining walls + neon trims, ortho camera 45-50 pitch lock, orbit clamps, dev grid helper) · **Estimate:** ~1–1.5 days
 
 ## Goal
 
