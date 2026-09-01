@@ -26,6 +26,7 @@ export function serializePlot(plot: Plot & { currentCycle: AuctionCycle | null }
     ...base,
     currentPriceCents: plot.currentCycle.currentPriceCents ?? undefined,
     endAt: plot.currentCycle.endAt.toISOString(),
+    currentLeaderPreBidId: plot.currentLeaderPreBidId ?? undefined,
   };
 
   if (plot.currentLeaderPreBidId) {

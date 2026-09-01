@@ -1,7 +1,7 @@
 # Phase 1.3 — Data Binding, Status & Personal Identity
 
 **Milestone:** [1 · 3D City](../PLAN.md) · **Prev:** [1.2 Tier Meshes](phase-02-tier-meshes.md) · **Next:** [1.4 Interaction & HUD](phase-04-interaction-hud.md)
-**Status:** ⚪ Not started · **Estimate:** ~2 days
+**Status:** ✅ Complete · **Estimate:** ~2 days
 
 ## Goal
 
@@ -45,12 +45,12 @@ The real 49-plot grid from `/api/plots` replaces mock data; each plot renders wi
 
 ## Exit criteria
 
-- [ ] City is 100% data-driven from the deployed API, with tier-correct plinth Y
-- [ ] Both status skins (`IDLE`/`LIVE`) readable at default zoom, plus the shared-tick "closing soon" escalation visible near `endAt`
-- [ ] Personal identity (beacon + aura + badge) visible only on owned-leading plots and correct through an outbid flip
-- [ ] Outbid badge shows correct tier increment (+$0.50 / +$1.00 / +$5.00) per plot tier
-- [ ] Loading and error states ship (never a black screen)
-- [ ] No plot drives an independent per-second re-render in the base grid view — confirmed by profiling with several `LIVE` plots at once
+- [x] City is 100% data-driven from the deployed API, with tier-correct plinth Y
+- [x] Both status skins (`IDLE`/`LIVE`) readable at default zoom, plus the shared-tick "closing soon" escalation visible near `endAt`
+- [x] Personal identity (beacon + aura + badge) visible only on owned-leading plots and correct through an outbid flip
+- [x] Outbid badge shows correct tier increment (+$0.50 / +$1.00 / +$5.00) per plot tier
+- [x] Loading and error states ship (never a black screen)
+- [x] No plot drives an independent per-second re-render in the base grid view — confirmed by profiling with several `LIVE` plots at once
 
 ## Out of scope / notes
 

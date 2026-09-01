@@ -29,6 +29,8 @@ export interface PlotDto {
   currentPriceCents?: number;
   /** Present only when status === "LIVE" */
   endAt?: string;
+  /** Current winning pre-bid id (LIVE only) — client matches vs /api/me/bids. */
+  currentLeaderPreBidId?: string;
   leader?: LeaderBrandDto;
 }
 

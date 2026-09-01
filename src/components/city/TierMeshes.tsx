@@ -9,7 +9,7 @@
 import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import type { Mesh } from 'three';
-import { HILL } from '@/lib/city/config';
+import { plinthY } from '@/lib/city/grid-to-world';
 import { seededRange } from '@/lib/city/seeded';
 
 /** Footprints and height ranges per tier (phase-02 spec). */
@@ -92,19 +92,27 @@ function MidTower({ height, id }: { height: number; id: string }) {
 /** Layered cyberpunk megastructure with architectural light beam + antenna. */
 function CoreSpire({ height }: { height: number }) {
   const size = TIER_MESH.CORE.size;
+  // Stack proportions scale with the seeded height so the roof always lands
+  // at `height` (a 10-unit spire must not carry 14-unit geometry).
+  const seg1 = height * 0.45;
+  const seg2 = height * 0.27;
+  const seg3 = height * 0.28;
+  const y1 = seg1 / 2;
+  const y2 = seg1 + seg2 / 2;
+  const y3 = seg1 + seg2 + seg3 / 2;
   return (
     <group>
       {/* stacked setback boxes */}
-      <mesh castShadow position={[0, 3.0, 0]}>
-        <boxGeometry args={[size, 6.0, size]} />
+      <mesh castShadow position={[0, y1, 0]}>
+        <boxGeometry args={[size, seg1, size]} />
         <meshStandardMaterial color="#161a2b" metalness={0.7} roughness={0.4} />
       </mesh>
-      <mesh castShadow position={[0, 7.5, 0]}>
-        <boxGeometry args={[size * 0.78, 3.0, size * 0.78]} />
+      <mesh castShadow position={[0, y2, 0]}>
+        <boxGeometry args={[size * 0.78, seg2, size * 0.78]} />
         <meshStandardMaterial color="#1c2137" metalness={0.75} roughness={0.35} />
       </mesh>
-      <mesh castShadow position={[0, 10.25, 0]}>
-        <boxGeometry args={[size * 0.55, 2.5, size * 0.55]} />
+      <mesh castShadow position={[0, y3, 0]}>
+        <boxGeometry args={[size * 0.55, seg3, size * 0.55]} />
         <meshStandardMaterial color="#232a45" metalness={0.8} roughness={0.3} />
       </mesh>
       {/* permanent architectural light beam through the core */}
@@ -143,21 +151,12 @@ export function Plot({ plot }: { plot: PlotMeshData }) {
   const height = plotHeight(plot.id, plot.tier);
   const px = plot.originX + plot.spanX / 2 - 5;
   const pz = plot.originY + plot.spanY / 2 - 5;
-  // Terrace plinth top: 0.0 / 2.0 / 5.0 (HILL constants).
-  const baseY = plot.tier === 'OUTER' ? HILL.outerY : plot.tier === 'MID' ? HILL.midY : HILL.coreY;
+  const baseY = plinthY(plot.tier);
 
-  // Hover/select wiring lands in phase 1.4.
-  const onPointerOver = () => {};
-  const onPointerOut = () => {};
-  const onClick = () => {};
-
+  // Pointer handlers arrive in phase 1.4 — attaching no-ops here would make
+  // R3F raycast all 49 plots on every pointer move for nothing.
   return (
-    <group
-      position={[px, baseY, pz]}
-      onPointerOver={onPointerOver}
-      onPointerOut={onPointerOut}
-      onClick={onClick}
-    >
+    <group position={[px, baseY, pz]}>
       {plot.tier === 'OUTER' && <OuterTower height={height} />}
       {plot.tier === 'MID' && <MidTower id={plot.id} height={height} />}
       {plot.tier === 'CORE' && <CoreSpire height={height} />}
