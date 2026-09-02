@@ -158,10 +158,6 @@ export function BidModal() {
 
   const submit = async () => {
     if (status === 'submitting') return;
-    if (!tryMarkSubmit()) {
-      setStatus('error', 'Please wait a few seconds between submissions.');
-      return; // client anti-spam throttle (2.1)
-    }
     const input = toInput(values, plot.id, min);
     const r = validateBidForm(input, {
       mode,
@@ -172,6 +168,12 @@ export function BidModal() {
     setFieldErrors(r.errors);
     setTouched(new Set(['companyName', 'tagline', 'targetUrl', 'twitterHandle', 'mrrText', 'maxBidDollars']));
     if (!r.ok || !r.values) return;
+    // Only consume the throttle token once the submit is really going out —
+    // a validation failure must not lock the user out for 5s.
+    if (!tryMarkSubmit()) {
+      setStatus('error', 'Please wait a few seconds between submissions.');
+      return;
+    }
 
     setStatus('submitting');
     try {

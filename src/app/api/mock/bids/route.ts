@@ -35,6 +35,11 @@ export async function POST(req: NextRequest) {
     selfHostnames: [req.nextUrl.hostname],
   });
   if (!r.ok) {
+    // Pathless schema issues (e.g. malformed body) leave errors empty; never
+    // return a message-less 422 — the modal would silently do nothing.
+    if (Object.keys(r.errors).length === 0) {
+      return NextResponse.json({ error: 'Invalid submission' }, { status: 400 });
+    }
     return NextResponse.json({ fieldErrors: r.errors }, { status: 422 });
   }
 
