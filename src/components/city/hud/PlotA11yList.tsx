@@ -7,14 +7,17 @@
  */
 
 import { useCityStore } from '@/lib/city/store';
-import { sectorLabel, useHudTick, hudNowMs, formatHudCountdown } from '@/lib/city/hud-hooks';
+import { sectorLabel, formatHudCountdown, hudNowMs } from '@/lib/city/hud-hooks';
+import { useTick } from '@/components/city/PlotSkins';
 import { flyToPlot } from '@/lib/city/camera-rig';
 import { formatPrice } from '@/lib/tiers';
 
 export function PlotA11yList() {
   const plots = useCityStore((s) => s.plots);
   const setSelectedPlotId = useCityStore((s) => s.setSelectedPlotId);
-  const tick = useHudTick();
+  // Refresh countdown text off the shared 5s grid tick, NOT the 1 Hz hud
+  // tick — per-second updates are scoped to the detail card (1.5 invariant).
+  const tick = useTick();
   const now = hudNowMs();
   void tick;
 

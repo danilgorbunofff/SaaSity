@@ -23,10 +23,9 @@ import { Html } from '@react-three/drei';
 import { AdditiveBlending, type Mesh, type MeshStandardMaterial } from 'three';
 import { TIERS, formatPrice } from '@/lib/tiers';
 import { TIER_MESH } from '@/components/city/TierMeshes';
+import { NEON, PERF_MINIMAL } from '@/lib/city/config';
 import { isClosingSoon } from '@/lib/city/ownership';
 import type { PlotDto } from '@/types/api';
-
-const NEON = { cyan: '#00f0ff', magenta: '#ff0055', amber: '#ffb400' } as const;
 
 const TICK_MS = 5000;
 
@@ -168,18 +167,37 @@ export function SkinEdgeGlow({
 /* Interaction rings (phase 1.4): hover < selected                     */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Ring radii must not bleed into neighboring plots. MID plots are packed on
+ * a 2.0-unit grid (half-span 1.0) and the CORE summit is a 4x4 terrace
+ * (half-span 2.0); OUTER plots sit on a 1.0 grid but their rings never
+ * exceed it, so no clamp is needed there.
+ */
+const RING_CLAMP: Record<'OUTER' | 'MID' | 'CORE', number> = {
+  OUTER: Infinity,
+  MID: 1.0,
+  CORE: 2.0,
+};
+
+function clampRingRadius(tier: 'OUTER' | 'MID' | 'CORE', r: number, width: number): number {
+  const max = RING_CLAMP[tier] - width;
+  return Math.min(r, max);
+}
+
 /** Flat ground ring: hover = faint white, selected = bright cyan. */
 export function SelectionRing({
   size,
   y,
   selected,
+  tier,
 }: {
   size: number;
   y: number;
   selected: boolean;
+  tier: 'OUTER' | 'MID' | 'CORE';
 }) {
   const ref = useRef<Mesh>(null);
-  const r = size / 2 + 0.12;
+  const r = clampRingRadius(tier, size / 2 + 0.12, selected ? 0.09 : 0.05);
 
   useFrame(({ clock }) => {
     if (ref.current) {
@@ -213,6 +231,44 @@ export function SelectionRing({
 /* Personal identity layer - owned-leading (or outbid) plots only      */
 /* ------------------------------------------------------------------ */
 
+/** Amber call-to-action ring for IDLE plots during the pulse CTA window. */
+export function IdlePulseRing({
+  size,
+  y,
+  tier,
+}: {
+  size: number;
+  y: number;
+  tier: 'OUTER' | 'MID' | 'CORE';
+}) {
+  const ref = useRef<Mesh>(null);
+  const r = clampRingRadius(tier, size / 2 + 0.12, 0.09);
+
+  useFrame(({ clock }) => {
+    if (ref.current) {
+      const mat = ref.current.material as MeshStandardMaterial;
+      const phase = 0.5 + 0.5 * Math.sin(clock.elapsedTime * 2.8);
+      mat.emissiveIntensity = 1.2 + 1.1 * phase;
+      mat.opacity = 0.5 + 0.45 * phase;
+    }
+  });
+
+  return (
+    <mesh ref={ref} position={[0, y, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <ringGeometry args={[r, r + 0.09, 48]} />
+      <meshStandardMaterial
+        color="#04121a"
+        emissive={NEON.amber}
+        emissiveIntensity={1.2}
+        transparent
+        opacity={0.7}
+        side={2}
+        toneMapped={false}
+      />
+    </mesh>
+  );
+}
+
 /** Skyward light beacon: additive cyan (amber when outbid) roof -> sky. */
 function Beacon({ baseY, height, outbid }: { baseY: number; height: number; outbid: boolean }) {
   const matRef = useRef<MeshBasicMaterialImpl>(null);
@@ -245,9 +301,9 @@ function Beacon({ baseY, height, outbid }: { baseY: number; height: number; outb
 type MeshBasicMaterialImpl = import('three').MeshBasicMaterial;
 
 /** Ground aura ring pulsing on the terrace surface (plinth Y, not world 0). */
-function AuraRing({ size, y, outbid }: { size: number; y: number; outbid: boolean }) {
+function AuraRing({ size, y, tier, outbid }: { size: number; y: number; tier: 'OUTER' | 'MID' | 'CORE'; outbid: boolean }) {
   const ref = useRef<Mesh>(null);
-  const r = size / 2 + 0.18;
+  const r = clampRingRadius(tier, size / 2 + 0.18, 0.1);
   const speed = outbid ? 3.0 : 1.4;
 
   useFrame(({ clock }) => {
@@ -344,9 +400,11 @@ export interface PlotSkinsProps {
   hovered?: boolean;
   /** Phase 1.4 selection highlight (stronger than hover). */
   selected?: boolean;
+  /** Amber pulse on IDLE plots (My Leases empty-state CTA). */
+  idlePulse?: boolean;
 }
 
-export function PlotSkins({ plot, height, baseY, ownedLeading, outbid, hovered, selected }: PlotSkinsProps) {
+export function PlotSkins({ plot, height, baseY, ownedLeading, outbid, hovered, selected, idlePulse }: PlotSkinsProps) {
   const closingSoon = useClosingSoon(plot.endAt);
   const showPersonal = ownedLeading || outbid;
   const badgeY = baseY + height + (plot.tier === 'CORE' ? 2.6 : 1.0);
@@ -365,12 +423,16 @@ export function PlotSkins({ plot, height, baseY, ownedLeading, outbid, hovered, 
           size={TIER_MESH[plot.tier].size}
           y={baseY + 0.05}
           selected={!!selected}
+          tier={plot.tier}
         />
       )}
-      {showPersonal && (
+      {idlePulse && plot.status === 'IDLE' && (
+        <IdlePulseRing size={TIER_MESH[plot.tier].size} y={baseY + 0.07} tier={plot.tier} />
+      )}
+      {showPersonal && !PERF_MINIMAL && (
         <group>
           <Beacon baseY={baseY} height={height} outbid={outbid} />
-          <AuraRing size={TIER_MESH[plot.tier].size} y={baseY + 0.03} outbid={outbid} />
+          <AuraRing size={TIER_MESH[plot.tier].size} y={baseY + 0.03} tier={plot.tier} outbid={outbid} />
           <RoofBadge label={label} tier={plot.tier} endAt={plot.endAt} outbid={outbid} y={badgeY} />
         </group>
       )}

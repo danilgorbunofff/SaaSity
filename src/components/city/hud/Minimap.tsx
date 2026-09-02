@@ -54,6 +54,16 @@ export function Minimap() {
     return grid;
   }, [plots]);
 
+  // Default tab stop: the CORE summit anchor if present, else the first plot.
+  // No hardcoded ids — the seed grid may change shape in later milestones.
+  const defaultFocusId = useMemo(() => {
+    if (plots.size === 0) return null;
+    for (const p of plots.values()) {
+      if (p.tier === 'CORE') return p.id;
+    }
+    return plots.keys().next().value ?? null;
+  }, [plots]);
+
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLButtonElement>, x: number, y: number) => {
       const deltas: Record<string, [number, number]> = {
@@ -83,28 +93,35 @@ export function Minimap() {
       className="absolute bottom-3 right-3 z-20 rounded-lg border border-[#12303a] bg-[#050508]/90 p-2 backdrop-blur-sm"
       aria-label="City minimap"
     >
-      <div className="grid" style={{ gridTemplateColumns: `repeat(${GRID}, ${CELL}px)` }}>
-        {cells.map((row, y) =>
-          row.map((id, x) => {
-            if (!id) {
-              return <div key={`${x}-${y}`} style={{ width: CELL, height: CELL }} />;
-            }
+      {plots.size > 0 && (
+        <div className="grid" style={{ gridTemplateColumns: `repeat(${GRID}, ${CELL}px)` }}>
+          {cells.map((row, y) =>
+            row.map((id, x) => {
+              if (!id) {
+                return <div key={`${x}-${y}`} style={{ width: CELL, height: CELL }} />;
+              }
             const plot = plots.get(id)!;
-            const kind: CellKind =
-              outbidPlotIds.has(id) && cellKind(plot, myPreBidIds) === 'mine' ? 'outbid' : cellKind(plot, myPreBidIds);
+            const baseKind = cellKind(plot, myPreBidIds);
+            // Outbid flips override the base cell even though the rival leads
+            // (cellKind alone would classify it as 'taken').
+            const kind: CellKind = outbidPlotIds.has(id) ? 'outbid' : baseKind;
             const isFocused = focusedCell === id;
             return (
               <button
                 key={id}
                 id={`minimap-cell-${id}`}
                 type="button"
-                tabIndex={focusedCell === null ? (id === 'core-01' ? 0 : -1) : isFocused ? 0 : -1}
+                tabIndex={focusedCell === null ? (id === defaultFocusId ? 0 : -1) : isFocused ? 0 : -1}
                 aria-label={`Sector ${sectorLabel(plot)} ${plot.status === 'LIVE' ? 'live' : 'idle'}${
                   plot.status === 'LIVE' ? ` ${formatPrice(plot.currentPriceCents ?? 0)}` : ''
                 }`}
                 onMouseEnter={() => setHovered(id)}
                 onMouseLeave={() => setHovered((h) => (h === id ? null : h))}
-                onFocus={() => setFocusedCell(id)}
+                onFocus={() => {
+                  setFocusedCell(id);
+                  setHovered(id);
+                }}
+                onBlur={() => setHovered((h) => (h === id ? null : h))}
                 onKeyDown={(e) => onKeyDown(e, x, y)}
                 onClick={() => flyToPlot(id)}
                 style={{ width: CELL, height: CELL }}
@@ -115,7 +132,8 @@ export function Minimap() {
             );
           }),
         )}
-      </div>
+        </div>
+      )}
       <div className="mt-1 flex items-center gap-2 font-mono text-[9px] text-[#6b7a8c]">
         <span className="text-[#00f0ff]">★ you</span>
         <span className="text-[#ffb400]">⚠ outbid</span>

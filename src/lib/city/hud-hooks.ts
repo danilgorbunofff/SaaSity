@@ -11,7 +11,8 @@ import { useCityStore, isOwnedLeading } from './store';
 import type { PlotDto } from '@/types/api';
 
 /* ------------------------------------------------------------------ */
-/* 1 Hz wall-clock tick (detail card per-second countdown)             */
+/* 1 Hz wall-clock tick (detail card per-second countdown ONLY - do not  */
+/* spread to other HUD surfaces; they refresh off the 5s grid tick)      */
 /* ------------------------------------------------------------------ */
 
 let hudTickValue = 0;
@@ -71,6 +72,14 @@ export function formatHudCountdown(endAt: string, now: number): string {
 /** Sector label: A-J = originY row, 1-10 = originX column. */
 export function sectorLabel(plot: Pick<PlotDto, 'originX' | 'originY'>): string {
   return `${String.fromCharCode(65 + plot.originY)}${plot.originX + 1}`;
+}
+
+/**
+ * Pulse CTA helper - kept for potential callers; the scene reads the same
+ * flag via useCityStore((s) => s.highlightIdle) directly.
+ */
+export function useHighlightIdle(): boolean {
+  return useCityStore((s) => s.highlightIdle);
 }
 
 /** Sigma of currentPriceCents over LIVE plots - the live activity meter. */

@@ -19,6 +19,10 @@ export interface CityState {
   selectedPlotId: string | null;
   /** Currently hovered plot (1.4) — hover highlight + pointer cursor. */
   hoveredPlotId: string | null;
+  /** True while the My Leases empty-state CTA highlights IDLE plots (auto-expires). */
+  highlightIdle: boolean;
+  /** ?debug=1 QA toggle: render ownedLeading skin layer on every plot. */
+  debugForceOwned: boolean;
   loading: boolean;
   error: string | null;
   lastFetchedAt: number | null;
@@ -27,6 +31,8 @@ export interface CityState {
   setMyPreBids: (ids: string[]) => void;
   setSelectedPlotId: (plotId: string | null) => void;
   setHoveredPlotId: (plotId: string | null) => void;
+  pulseIdlePlots: () => void;
+  setDebugForceOwned: (v: boolean) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   markFetched: () => void;
@@ -38,6 +44,8 @@ export const useCityStore = create<CityState>()((set) => ({
   outbidPlotIds: new Set<string>(),
   selectedPlotId: null,
   hoveredPlotId: null,
+  highlightIdle: false,
+  debugForceOwned: false,
   loading: false,
   error: null,
   lastFetchedAt: null,
@@ -61,6 +69,11 @@ export const useCityStore = create<CityState>()((set) => ({
   setMyPreBids: (ids) => set({ myPreBidIds: new Set(ids) }),
   setSelectedPlotId: (plotId) => set({ selectedPlotId: plotId }),
   setHoveredPlotId: (plotId) => set({ hoveredPlotId: plotId }),
+  pulseIdlePlots: () => {
+    set({ highlightIdle: true });
+    setTimeout(() => set({ highlightIdle: false }), 8000);
+  },
+  setDebugForceOwned: (v) => set({ debugForceOwned: v }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
   markFetched: () => set({ lastFetchedAt: Date.now() }),

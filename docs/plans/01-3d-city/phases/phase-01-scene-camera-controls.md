@@ -45,9 +45,14 @@ An empty but correctly-framed **terraced hill** stage: ziggurat elevation, retai
 
 ## Exit criteria
 
-- [ ] Camera + controls match stepped-hill constants exactly (pitch lock, target `(0, 2.5, 0)`, zoom 40/20/80)
-- [ ] Three terrace steps render with retaining walls + neon trims, deployed-previewable with atmosphere
-- [ ] All tuning constants centralized in one config module (`lib/city/config.ts` or similar) including plinth Y values + neon colors
+- [x] Camera + controls match stepped-hill constants exactly (pitch lock, target `(0, 2.5, 0)`, zoom 40/20/80)
+- [x] Three terrace steps render with retaining walls + neon trims, deployed-previewable with atmosphere
+- [x] All tuning constants centralized in one config module (`lib/city/config.ts` or similar) including plinth Y values + neon colors
+
+> Implementation note: the camera position is derived in `config.ts` from the
+> locked polar angle + 45° azimuth at distance ~33.26 (≈ `[23.5, 24.6, 23.5]`),
+> not the literal `[20, 20, 20]` first written here — the literal value sat
+> outside the 45°–50° elevation lock.
 
 ## Out of scope / notes
 

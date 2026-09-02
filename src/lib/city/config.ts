@@ -18,7 +18,8 @@ export const HILL = {
   outerY: 0.0,
   midY: 2.0,
   coreY: 5.0,
-  midSize: 6,
+  /** Spans the full MID ring: 1.85-wide towers centered at ±3 reach ±3.925. */
+  midSize: 8,
   coreSize: 4,
   /** Tiny sink between stacked terraces — kills coplanar z-fighting. */
   overlap: 0.01,
@@ -76,8 +77,21 @@ export const LIGHTS = {
 } as const;
 
 /**
- * Low-power device heuristic (flagged now, tuned properly in phase 1.5):
- * fewer cores -> skip MSAA and cap dpr at 1.5.
+ * Low-power device heuristic (tuned in phase 1.5): fewer cores or low device
+ * memory -> skip MSAA and cap dpr at 1.5.
  */
 export const IS_LOW_POWER =
-  typeof navigator !== 'undefined' && (navigator.hardwareConcurrency ?? 8) <= 4;
+  typeof navigator !== 'undefined' &&
+  ((navigator.hardwareConcurrency ?? 8) <= 4 ||
+    ((navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8) <= 4 ||
+    navigator.maxTouchPoints > 1);
+
+/** Debug/perf-comparison flag (?perf=minimal): renders hill + beacons off. */
+export const PERF_MINIMAL =
+  typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).get('perf') === 'minimal';
+
+/** QA overlay flag (?debug=1): plot-id labels + force-ownedLeading toggle. */
+export const DEBUG_OVERLAY =
+  typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).get('debug') === '1';

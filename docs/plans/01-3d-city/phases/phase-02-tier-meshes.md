@@ -40,9 +40,19 @@ Three procedural, distinct-looking plot types built from primitives only (no dow
 
 ## Exit criteria
 
-- [ ] All three tiers visually distinct at default zoom **and** when zoomed to minZoom 20
-- [ ] Heights/positions fully deterministic per plot id
-- [ ] Coordinate helper covered by unit tests
+- [x] All three tiers visually distinct at default zoom **and** when zoomed to minZoom 20
+- [x] Heights/positions fully deterministic per plot id
+- [x] Coordinate helper covered by unit tests
+
+## Deviations from spec (as shipped)
+
+- **MID material:** the transmissive panel look was replaced with a tinted
+  transparent `meshStandardMaterial` (opacity 0.9) in 1.5 — transmission runs a
+  full extra scene pass each frame (see `MidTower` in TierMeshes). The envmap
+  fallback this spec mentions was skipped for the same cost reason.
+- **OUTER neon edge:** shipped as two diagonal emissive corner strips per
+  tower (instanced with the body) rather than a full top-border frame — keeps
+  the 1.5 instancing win (3 draw calls for all 36 OUTER towers).
 
 ## Out of scope / notes
 

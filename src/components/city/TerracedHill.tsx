@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Grid } from '@react-three/drei';
 import { HILL, NEON, SCENE } from '@/lib/city/config';
 /**
- * Terraced hill (ziggurat): 10x10 outer plinth at Y=0, 6x6 mid platform at
+ * Terraced hill (ziggurat): 10x10 outer plinth at Y=0, 8x8 mid platform at
  * Y=+2, 4x4 core summit at Y=+5. Retaining cliff walls between steps carry
  * horizontal neon trim strips. Draw calls stay flat: one slab + one wall band
  * + one trim per step — never per cell.

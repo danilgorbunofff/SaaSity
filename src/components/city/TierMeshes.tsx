@@ -6,12 +6,14 @@
  * M4 art pass per phase-02 doc.
  */
 
-import { useMemo, useRef } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import type { Mesh } from 'three';
+import { Matrix4 } from 'three';
+import type { InstancedMesh, Mesh } from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
 import { plinthY } from '@/lib/city/grid-to-world';
 import { seededRange } from '@/lib/city/seeded';
+import { NEON } from '@/lib/city/config';
 import { useCityStore } from '@/lib/city/store';
 
 /** Footprints and height ranges per tier (phase-02 spec). */
@@ -21,7 +23,15 @@ export const TIER_MESH = {
   CORE: { size: 3.8, minH: 10.0, maxH: 14.0 },
 } as const;
 
-const NEON = { cyan: '#00f0ff', magenta: '#ff0055', amber: '#ffb400' } as const;
+/** Releasing a stuck pointer cursor if the canvas unmounts mid-hover. */
+function useCursorCleanup() {
+  useEffect(
+    () => () => {
+      document.body.style.cursor = 'auto';
+    },
+    [],
+  );
+}
 
 export interface PlotMeshData {
   id: string;
@@ -37,24 +47,112 @@ export function plotHeight(id: string, tier: PlotMeshData['tier']): number {
   return seededRange(id, 'height', r.minH, r.maxH);
 }
 
-/** Dark metallic tower with subtle neon edge strips. */
-function OuterTower({ height }: { height: number }) {
+const OUTER_SIZE = TIER_MESH.OUTER.size;
+const OUTER_STRIP_OFFSET = OUTER_SIZE / 2;
+/** Scratch matrix reused across instance writes (module-level: never per-frame). */
+const tmpMatrix = new Matrix4();
+
+/**
+ * The 36 OUTER towers differ only by height, so each of their 3 meshes
+ * becomes a single InstancedMesh (36x fewer draw calls). Heights are baked
+ * into per-instance Y scales; the strip pair keeps the corner offsets via
+ * per-instance translations. Instanced raycast surfaces `instanceId`, so
+ * phase-1.4 pointer handling (hover/select, drag guard) is preserved here
+ * instead of on 36 individual <Plot> groups.
+ */
+export function OuterTowerField({ plots }: { plots: PlotMeshData[] }) {
+  const bodyRef = useRef<InstancedMesh>(null);
+  const stripARef = useRef<InstancedMesh>(null);
+  const stripBRef = useRef<InstancedMesh>(null);
+  const setHoveredPlotId = useCityStore((s) => s.setHoveredPlotId);
+  const setSelectedPlotId = useCityStore((s) => s.setSelectedPlotId);
+  const downPos = useRef<{ x: number; y: number } | null>(null);
+  useCursorCleanup();
+
+  const instances = useMemo(
+    () =>
+      plots.map((p) => {
+        const height = plotHeight(p.id, p.tier);
+        const x = p.originX + p.spanX / 2 - 5;
+        const z = p.originY + p.spanY / 2 - 5;
+        const y = plinthY('OUTER') + height / 2;
+        return { id: p.id, height, x, y, z };
+      }),
+    [plots]
+  );
+
+  useLayoutEffect(() => {
+    const apply = (mesh: InstancedMesh | null, scaleY: number, corner: 0 | 1 | -1) => {
+      if (!mesh) return;
+      instances.forEach((it, i) => {
+        tmpMatrix.makeScale(1, scaleY * it.height, 1);
+        tmpMatrix.setPosition(it.x + corner * OUTER_STRIP_OFFSET, it.y, it.z + corner * OUTER_STRIP_OFFSET);
+        mesh.setMatrixAt(i, tmpMatrix);
+      });
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere();
+    };
+    apply(bodyRef.current, 1, 0);
+    apply(stripARef.current, 0.92, 1);
+    apply(stripBRef.current, 0.92, -1);
+  }, [instances]);
+
+  const plotIdAt = (e: ThreeEvent<PointerEvent>) =>
+    e.instanceId != null ? instances[e.instanceId]?.id : undefined;
+
+  const onPointerOver = (e: ThreeEvent<PointerEvent>) => {
+    e.stopPropagation();
+    const id = plotIdAt(e);
+    if (id) {
+      setHoveredPlotId(id);
+      document.body.style.cursor = 'pointer';
+    }
+  };  const onPointerOut = (e: ThreeEvent<PointerEvent>) => {
+    e.stopPropagation();
+    setHoveredPlotId(null);
+    document.body.style.cursor = 'auto';
+  };
+  const onPointerDown = (e: ThreeEvent<PointerEvent>) => {
+    downPos.current = { x: e.clientX, y: e.clientY };
+  };
+  const onPointerUp = (e: ThreeEvent<PointerEvent>) => {
+    const d = downPos.current;
+    downPos.current = null;
+    if (!d) return;
+    if (Math.hypot(e.clientX - d.x, e.clientY - d.y) <= DRAG_GUARD_PX) {
+      e.stopPropagation();
+      const id = plotIdAt(e);
+      if (id) setSelectedPlotId(id);
+    }
+  };
+
   return (
     <group>
-      <mesh castShadow position={[0, height / 2, 0]}>
-        <boxGeometry args={[TIER_MESH.OUTER.size, height, TIER_MESH.OUTER.size]} />
+      <instancedMesh
+        ref={bodyRef}
+        args={[undefined, undefined, instances.length]}
+        onPointerOver={onPointerOver}
+        onPointerOut={onPointerOut}
+        onPointerDown={onPointerDown}
+        onPointerUp={onPointerUp}
+      >
+        <boxGeometry args={[OUTER_SIZE, 1, OUTER_SIZE]} />
         <meshStandardMaterial color="#1a2030" metalness={0.85} roughness={0.35} />
-      </mesh>
-      {/* vertical neon edge strips on the two front corners */}
-      {[
-        [0.45, 0.45],
-        [-0.45, -0.45],
-      ].map(([hx, hz], i) => (
-        <mesh key={i} position={[hx, height / 2, hz]}>
-          <boxGeometry args={[0.04, height * 0.92, 0.04]} />
-          <meshBasicMaterial color={NEON.cyan} toneMapped={false} />
-        </mesh>
-      ))}
+      </instancedMesh>
+      <instancedMesh
+        ref={stripARef}
+        args={[undefined, undefined, instances.length]}
+      >
+        <boxGeometry args={[0.04, 1, 0.04]} />
+        <meshBasicMaterial color={NEON.cyan} toneMapped={false} />
+      </instancedMesh>
+      <instancedMesh
+        ref={stripBRef}
+        args={[undefined, undefined, instances.length]}
+      >
+        <boxGeometry args={[0.04, 1, 0.04]} />
+        <meshBasicMaterial color={NEON.cyan} toneMapped={false} />
+      </instancedMesh>
     </group>
   );
 }
@@ -65,16 +163,16 @@ function MidTower({ height, id }: { height: number; id: string }) {
   const frameY = useMemo(() => seededRange(id, 'billboardY', 0.62, 0.85) * height, [id, height]);
   return (
     <group>
-      <mesh castShadow position={[0, height / 2, 0]}>
+      <mesh position={[0, height / 2, 0]}>
         <boxGeometry args={[size, height, size]} />
-        <meshPhysicalMaterial
+        {/* transmission runs a full extra scene pass each frame; the tinted
+            slab look is replicated cheaply with opacity instead. */}
+        <meshStandardMaterial
           color="#0e2431"
-          metalness={0.1}
-          roughness={0.15}
-          transmission={0.55}
-          thickness={1.2}
+          metalness={0.6}
+          roughness={0.25}
           transparent
-          opacity={0.92}
+          opacity={0.9}
         />
       </mesh>
       {/* cyan edge trim ring at top */}
@@ -105,15 +203,15 @@ function CoreSpire({ height }: { height: number }) {
   return (
     <group>
       {/* stacked setback boxes */}
-      <mesh castShadow position={[0, y1, 0]}>
+      <mesh position={[0, y1, 0]}>
         <boxGeometry args={[size, seg1, size]} />
         <meshStandardMaterial color="#161a2b" metalness={0.7} roughness={0.4} />
       </mesh>
-      <mesh castShadow position={[0, y2, 0]}>
+      <mesh position={[0, y2, 0]}>
         <boxGeometry args={[size * 0.78, seg2, size * 0.78]} />
         <meshStandardMaterial color="#1c2137" metalness={0.75} roughness={0.35} />
       </mesh>
-      <mesh castShadow position={[0, y3, 0]}>
+      <mesh position={[0, y3, 0]}>
         <boxGeometry args={[size * 0.55, seg3, size * 0.55]} />
         <meshStandardMaterial color="#232a45" metalness={0.8} roughness={0.3} />
       </mesh>
@@ -152,7 +250,7 @@ function AntennaTip({ y }: { y: number }) {
 /** Max pointer travel (px) between down and up that still counts as a click. */
 const DRAG_GUARD_PX = 5;
 
-export function Plot({ plot }: { plot: PlotMeshData }) {
+export function PlotImpl({ plot }: { plot: PlotMeshData }) {
   const height = plotHeight(plot.id, plot.tier);
   const px = plot.originX + plot.spanX / 2 - 5;
   const pz = plot.originY + plot.spanY / 2 - 5;
@@ -160,17 +258,19 @@ export function Plot({ plot }: { plot: PlotMeshData }) {
 
   // Phase 1.4 interaction. Pointer handlers live here; the visual hover/
   // selection ring is wired in CityScene -> PlotSkins via store selectors,
-  // so only the two affected plots re-render, not all 49.
+  // so re-rendering is limited to plots whose derived ring inputs change.
   const setHoveredPlotId = useCityStore((s) => s.setHoveredPlotId);
   const setSelectedPlotId = useCityStore((s) => s.setSelectedPlotId);
   const downPos = useRef<{ x: number; y: number } | null>(null);
+  useCursorCleanup();
 
   const onPointerOver = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
     setHoveredPlotId(plot.id);
     document.body.style.cursor = 'pointer';
   };
-  const onPointerOut = () => {
+  const onPointerOut = (e: ThreeEvent<PointerEvent>) => {
+    e.stopPropagation();
     setHoveredPlotId(null);
     document.body.style.cursor = 'auto';
   };
@@ -196,9 +296,14 @@ export function Plot({ plot }: { plot: PlotMeshData }) {
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
     >
-      {plot.tier === 'OUTER' && <OuterTower height={height} />}
       {plot.tier === 'MID' && <MidTower id={plot.id} height={height} />}
       {plot.tier === 'CORE' && <CoreSpire height={height} />}
     </group>
   );
 }
+
+/**
+ * Memoized: `plot` objects come from a stable useMemo'd seed array, so this
+ * only re-renders if the plot data identity actually changes.
+ */
+export const Plot = memo(PlotImpl);

@@ -2,15 +2,24 @@
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { Html, OrbitControls } from '@react-three/drei';
+import { Environment, Html, Lightformer, OrbitControls } from '@react-three/drei';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
-import { CAMERA, CONTROLS, IS_LOW_POWER, LIGHTS, SCENE } from '@/lib/city/config';
+import {
+  CAMERA,
+  CONTROLS,
+  DEBUG_OVERLAY,
+  IS_LOW_POWER,
+  LIGHTS,
+  NEON,
+  PERF_MINIMAL,
+  SCENE,
+} from '@/lib/city/config';
 import { registerCameraControls } from '@/lib/city/camera-rig';
 import { generateInitialGrid } from '@/lib/grid';
 import { fetchCitySnapshot } from '@/lib/city/fetch-city';
 import { useCityStore, isOwnedLeading } from '@/lib/city/store';
 import { TerracedHill } from './TerracedHill';
-import { Plot, plotHeight } from './TierMeshes';
+import { Plot, OuterTowerField, plotHeight, type PlotMeshData } from './TierMeshes';
 import { plinthY } from '@/lib/city/grid-to-world';
 import { PlotSkins } from './PlotSkins';
 import { TopStrip } from './hud/TopStrip';
@@ -99,8 +108,49 @@ function LoadingChip() {
   );
 }
 
-function ErrorChip() {
-  const error = useCityStore((s) => s.error);
+/**
+ * ?debug=1 QA overlay: floating plot-id labels + a force-ownedLeading
+ * toggle that renders the personal skin layer (beacon/aura/badge) on every
+ * plot without staging data. Never mounts without the flag.
+ */
+function DebugOverlay({ seed }: { seed: PlotMeshData[] }) {
+  const debugForceOwned = useCityStore((s) => s.debugForceOwned);
+  const setDebugForceOwned = useCityStore((s) => s.setDebugForceOwned);
+  const plotsMap = useCityStore((s) => s.plots);
+  return (
+    <group>
+      {seed.map((p) => {
+        const px = p.originX + p.spanX / 2 - 5;
+        const pz = p.originY + p.spanY / 2 - 5;
+        const y = plinthY(p.tier) + plotHeight(p.id, p.tier) + (p.tier === 'CORE' ? 3.2 : 1.6);
+        return (
+          <Html key={`dbg-${p.id}`} center position={[px, y, pz]} zIndexRange={[5, 0]}>
+            <span
+              className={`rounded px-1 font-mono text-[8px] leading-tight ${
+                plotsMap.has(p.id) ? 'text-[#00f0ff]' : 'text-[#6b7a8c]'
+              }`}
+              style={{ textShadow: '0 0 4px #000' }}
+            >
+              {p.id}
+            </span>
+          </Html>
+        );
+      })}
+      <Html center position={[0, 16, 0]} zIndexRange={[6, 0]}>
+        <label className="flex cursor-pointer items-center gap-2 rounded border border-[#12303a] bg-[#050508]/90 px-2 py-1 font-mono text-[10px] text-[#e8f6ff]">
+          <input
+            type="checkbox"
+            checked={debugForceOwned}
+            onChange={(e) => setDebugForceOwned(e.target.checked)}
+          />
+          debug: force ownedLeading
+        </label>
+      </Html>
+    </group>
+  );
+}
+
+function ErrorChip() {  const error = useCityStore((s) => s.error);
   const hasData = useCityStore((s) => s.plots.size > 0);
   if (!error) return null;
   return (
@@ -115,11 +165,16 @@ function ErrorChip() {
   );
 }
 
+'use client';
+
 /**
  * Live-data plot grid over the static seed layout. Before the first
  * snapshot lands, towers render bare so the hill is never an empty plateau.
  * Plot self-positions at its absolute world coords; skins mount in a
  * sibling group at the plot's terrace origin (relative space).
+ *
+ * ?debug=1 mounts a QA overlay: per-plot id labels + a force-ownedLeading
+ * toggle to exercise the personal skin layer without staging data.
  */
 function CityPlots() {
   const plotsMap = useCityStore((s) => s.plots);
@@ -127,12 +182,44 @@ function CityPlots() {
   const outbidPlotIds = useCityStore((s) => s.outbidPlotIds);
   const hoveredPlotId = useCityStore((s) => s.hoveredPlotId);
   const selectedPlotId = useCityStore((s) => s.selectedPlotId);
+  const highlightIdle = useCityStore((s) => s.highlightIdle);
+  const debugForceOwned = useCityStore((s) => s.debugForceOwned);
   const seed = useMemo(() => generateInitialGrid(), []);
   const hasData = plotsMap.size > 0;
 
+  // Dev-time invariant: the 3D layout is built from the static seed, so the
+  // snapshot DTOs must agree on every plot's grid origin/span. A mismatch
+  // means the seed and API have diverged — 3D positions would silently lie.
+  useEffect(() => {
+    if (!hasData) return;
+    for (const p of seed) {
+      const dto = plotsMap.get(p.id);
+      if (!dto) {
+        console.error(`[city] seed plot ${p.id} missing from snapshot DTOs`);
+        continue;
+      }
+      if (
+        dto.originX !== p.originX ||
+        dto.originY !== p.originY ||
+        dto.spanX !== p.spanX ||
+        dto.spanY !== p.spanY
+      ) {
+        console.error(
+          `[city] seed/DTO divergence for ${p.id}: seed=(${p.originX},${p.originY} ${p.spanX}x${p.spanY}) dto=(${dto.originX},${dto.originY} ${dto.spanX}x${dto.spanY})`,
+        );
+      }
+    }
+  }, [hasData, seed, plotsMap]);
+
+  // One InstancedMesh per OUTER part replaces 36 towers x 3 meshes. Skins and
+  // hover/selection still work per plot; the tier split only moves the tower.
+  const outerPlots = useMemo(() => seed.filter((p) => p.tier === 'OUTER'), [seed]);
+  const tallPlots = useMemo(() => seed.filter((p) => p.tier !== 'OUTER'), [seed]);
+
   return (
     <group>
-      {seed.map((p) => {
+      <OuterTowerField plots={outerPlots} />
+      {tallPlots.map((p) => {
         const dto: PlotDto | undefined = hasData ? plotsMap.get(p.id) : undefined;
         const px = p.originX + p.spanX / 2 - 5;
         const pz = p.originY + p.spanY / 2 - 5;
@@ -140,6 +227,7 @@ function CityPlots() {
         const height = plotHeight(p.id, p.tier);
         const owned = !!dto && isOwnedLeading(dto, myPreBidIds, dto.currentLeaderPreBidId);
         const outbid = outbidPlotIds.has(p.id) && !owned;
+        const forceOwned = DEBUG_OVERLAY && debugForceOwned;
         return (
           <group key={p.id}>
             <Plot plot={p} />
@@ -149,16 +237,20 @@ function CityPlots() {
                   plot={dto}
                   height={height}
                   baseY={0}
-                  ownedLeading={owned}
-                  outbid={outbid}
+                  ownedLeading={owned || forceOwned}
+                  outbid={outbid && !forceOwned}
                   hovered={hoveredPlotId === p.id}
                   selected={selectedPlotId === p.id}
+                  idlePulse={highlightIdle}
                 />
               </group>
             )}
           </group>
         );
       })}
+      {DEBUG_OVERLAY && (
+        <DebugOverlay seed={seed} />
+      )}
     </group>
   );
 }
@@ -202,7 +294,18 @@ export function CityScene() {
         color={LIGHTS.rimMagenta.color}
       />
 
-      <TerracedHill showGrid />
+      {/* Metals (metalness 0.6-0.85) need an env map to be visible from all
+          angles — directional lights alone only show specular glints. This is
+          a procedural in-scene env (no network fetch), baked once. */}
+      <Environment resolution={IS_LOW_POWER ? 64 : 128} frames={1}>
+        <color attach="background" args={['#05070d']} />
+        <Lightformer form="rect" intensity={2.4} color={LIGHTS.key.color} position={[6, 9, 4]} scale={[10, 6, 1]} target={[0, 0, 0]} />
+        <Lightformer form="rect" intensity={1.6} color={NEON.cyan} position={[-8, 4, -6]} scale={[8, 4, 1]} target={[0, 0, 0]} />
+        <Lightformer form="rect" intensity={1.1} color={NEON.magenta} position={[8, 3, -7]} scale={[7, 3, 1]} target={[0, 0, 0]} />
+        <Lightformer form="ring" intensity={1.2} color="#8fa8c8" position={[0, -6, 0]} scale={12} target={[0, 0, 0]} />
+      </Environment>
+
+      {!PERF_MINIMAL && <TerracedHill showGrid />}
       <CityPlots />
 
       <DataBinder />

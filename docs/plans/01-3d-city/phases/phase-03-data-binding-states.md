@@ -32,6 +32,7 @@ The real 49-plot grid from `/api/plots` replaces mock data; each plot renders wi
    - Map every API plot through tier-aware `gridToWorld(plot, tier)` so buildings sit on their correct terrace (`OUTER@0`, `MID@+2`, `CORE@+5`). Full city composed from data only — no hardcoded positions
 5. **Sanity overlay**
    - Dev toggle: show plot ids as HTML labels (drei `Html`) to verify mapping visually against the cell grid on the hill; second toggle: force `ownedLeading` on arbitrary plots to QA beacon/aura/badge without real bids
+   - ✅ Shipped as `?debug=1`: mounts `DebugOverlay` in CityScene — plot-id labels for all 49 plots + a "force ownedLeading" checkbox (store slice `debugForceOwned`) that renders the personal skin layer grid-wide. Absent from the bundle path unless the URL flag is set
 6. **SSR/CSR notes**
    - Canvas is client-only (`dynamic import, ssr:false`); confirm no hydration mismatch; first paint strategy for SEO stays a shell + copy (M4 handles narrative)
    - Html overlays (`<Html transform>`) billboard badges are DOM — not WebGL — so they don't add draw calls but do add DOM nodes; cap is bounded by owned-plot count (max affordable `LIVE` plots per bidder, typically 1–3, not 49) so cost is negligible. Still, 1.5 profiles them

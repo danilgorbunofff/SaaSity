@@ -6,8 +6,9 @@
  * a plot is selected. Bidding actions are disabled until phase 2 (M2).
  */
 
-import { useCityStore } from '@/lib/city/store';
+import { useCityStore, isOwnedLeading } from '@/lib/city/store';
 import { useHudTick, hudNowMs, formatHudCountdown, sectorLabel } from '@/lib/city/hud-hooks';
+import { flyToPlot } from '@/lib/city/camera-rig';
 import { formatPrice, TIERS } from '@/lib/tiers';
 import { tierIncrementCents } from '@/components/city/PlotSkins';
 import type { PlotDto } from '@/types/api';
@@ -70,10 +71,12 @@ export function DetailCard() {
   const selectedPlotId = useCityStore((s) => s.selectedPlotId);
   const plot = useCityStore((s) => (s.selectedPlotId ? s.plots.get(s.selectedPlotId) ?? null : null));
   const myPreBidIds = useCityStore((s) => s.myPreBidIds);
+  const outbidPlotIds = useCityStore((s) => s.outbidPlotIds);
   const setSelectedPlotId = useCityStore((s) => s.setSelectedPlotId);
 
   if (!selectedPlotId || !plot) return null;
-  const owned = plot.status === 'LIVE' && !!plot.currentLeaderPreBidId && myPreBidIds.has(plot.currentLeaderPreBidId);
+  const owned = isOwnedLeading(plot, myPreBidIds, plot.currentLeaderPreBidId);
+  const outbid = outbidPlotIds.has(plot.id) && plot.status === 'LIVE' && !owned;
 
   return (
     <aside
@@ -94,6 +97,20 @@ export function DetailCard() {
             >
               ★ Your HQ — leading
             </button>
+          ) : outbid ? (
+            <div className="mt-4">
+              <div className="rounded border border-[#ffb400]/60 bg-[#ffb400]/10 px-3 py-2 font-mono text-[12px] font-bold uppercase tracking-wider text-[#ffb400] animate-[city-outbid-flash_0.8s_ease-in-out_infinite]">
+                ⚠️ Outbid: +{formatPrice(tierIncrementCents(plot.tier))} to retain
+              </div>
+              <button
+                type="button"
+                onClick={() => flyToPlot(plot.id)}
+                title="Jump to the plot and re-take the lead (bid form lands in phase 2)"
+                className="mt-2 w-full rounded border border-[#ffb400]/70 bg-[#ffb400]/10 px-3 py-2 text-[12px] font-semibold uppercase tracking-wider text-[#ffb400] hover:bg-[#ffb400]/20"
+              >
+                Jump &amp; outbid
+              </button>
+            </div>
           ) : (
             <button
               type="button"

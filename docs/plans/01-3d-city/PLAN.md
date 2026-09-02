@@ -1,7 +1,7 @@
 # Milestone 1 — 3D City
 
 **Prev:** [00 · Scaffold & Data Layer](../00-scaffold-and-data-layer/PLAN.md) · **Next:** [02 · Reservations & Realtime](../02-reservations-and-realtime/PLAN.md)
-**Status:** ⚪ Not started
+**Status:** ✅ Complete (M1 phases 1.1–1.5 shipped; M2 reservations & realtime pending)
 
 ## Objective
 
@@ -9,7 +9,7 @@ Render the full 10x10 isometric **terraced-hill** cyberpunk city from live plot 
 
 ## In scope
 
-- React Three Fiber scene with orthographic camera (zoom 40, position [20, 20, 20]) and damped OrbitControls (minZoom 20, maxZoom 80, pitch locked 45°–50°, target `(0, 2.5, 0)` anchored to hill center-of-mass)
+- React Three Fiber scene with orthographic camera (zoom 40, position [23.5, 24.6, 23.5] — derived from the 45° azimuth + 47.5° elevation constraints, ~33.26 units out from target `(0, 2.5, 0)`) and damped OrbitControls (minZoom 20, maxZoom 80, pitch locked 45°–50°, target `(0, 2.5, 0)` anchored to hill center-of-mass)
 - **Terraced hill grid architecture (ziggurat):** three stepped elevation tiers preventing isometric occlusion — Outer plinth `Y=0.0` (1.5–2.5m), Mid platform `Y=+2.0` (4.0–6.0m), Core summit `Y=+5.0` (10–14m) — with retaining cliff walls + horizontal neon trims (#00f0ff / #ff0055)
 - Grid-to-world conversion centered at origin, now with tier plinth Y baked in
 - Three procedural mesh tiers (no downloaded 3D assets):
@@ -43,11 +43,11 @@ Render the full 10x10 isometric **terraced-hill** cyberpunk city from live plot 
 
 ## Definition of done
 
-- [ ] All 49 plots render at correct positions/sizes on correct terrace step, no center-hidden occlusion at default zoom
-- [ ] Camera cannot flip under the grid or zoom out of framing; pitch stays in 45°–50°, orbit pivots around hill center `(0, 2.5, 0)`
-- [ ] Your `LIVE` plots identifiable without orbit-hunting: beacon visible at any angle/zoom, minimap + My Leases switcher both fly to the building
-- [ ] Outbid transition unmistakable within one glance (badge flip, amber pulse, contested toast)
-- [ ] ~60 FPS on desktop, acceptable (~30) on mid mobile; memory stable during long orbit sessions; Html-overlay count stays bounded
+- [x] All 49 plots render at correct positions/sizes on correct terrace step, no center-hidden occlusion at default zoom
+- [x] Camera cannot flip under the grid or zoom out of framing; pitch stays in 45°–50°, orbit pivots around hill center `(0, 2.5, 0)`
+- [x] Your `LIVE` plots identifiable without orbit-hunting: beacon visible at any angle/zoom, minimap + My Leases switcher both fly to the building
+- [x] Outbid transition unmistakable within one glance (badge flip, amber pulse, contested toast)
+- [x] ~60 FPS on desktop, acceptable (~30) on mid mobile; memory stable during long orbit sessions; Html-overlay count stays bounded
 
 ## Dependencies
 
