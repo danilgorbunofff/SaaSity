@@ -5,10 +5,12 @@ import { getBidderPayload } from '@/server/bidder-cookie';
 export const dynamic = 'force-dynamic';
 
 /**
- * Private owner view (phase 1.3): returns ONLY the caller's own ACTIVE
- * PreBid ids — never maxBidCents in a list context, never other bidders'
- * data. The client derives ownedLeading by matching PreBid.id against
- * Plot.currentLeaderPreBidId from the public /api/plots payload.
+ * Private owner view (phase 1.3; extended by Part 1 lifecycle fix): returns
+ * ONLY the caller's own PreBid ids — ACTIVE (for the "am I leading an open
+ * auction" derivation) and WON (for the "am I the active tenant" derivation)
+ * — never maxBidCents in a list context, never other bidders' data. The
+ * client matches these ids against Plot.currentLeaderPreBidId (leading) and
+ * Plot.tenantPreBidId (tenancy) from the public /api/plots payload.
  */
 export async function GET() {
   const bidder = await getBidderPayload();
@@ -16,10 +18,10 @@ export async function GET() {
     return NextResponse.json({ preBidIds: [] });
   }
 
-  // ACTIVE only — WON/LOST/CANCELLED/EXPIRED pre-bids must not grant
-  // ownership display on a live cycle.
+  // ACTIVE (leading an open auction) + WON (holds an active/past lease).
+  // LOST/CANCELLED/EXPIRED pre-bids must never grant ownership display.
   const preBids = await prisma.preBid.findMany({
-    where: { bidderId: bidder.bidderId, status: 'ACTIVE' },
+    where: { bidderId: bidder.bidderId, status: { in: ['ACTIVE', 'WON'] } },
     select: { id: true },
   });
 

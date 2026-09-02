@@ -7,7 +7,7 @@
  */
 
 import { useMemo, useSyncExternalStore } from 'react';
-import { useCityStore, isOwnedLeading } from './store';
+import { useCityStore, isTenant } from './store';
 import type { PlotDto } from '@/types/api';
 
 /* ------------------------------------------------------------------ */
@@ -96,22 +96,26 @@ export function useCityValueCents(): number {
 
 export interface LeaseEntry {
   plot: PlotDto;
-  /** End of the cycle this plot currently leads, for soonest-first sorting. */
-  endAtMs: number;
 }
 
-/** Plots we currently lead, sorted by soonest cycle end. */
+/**
+ * Plots where we are the confirmed, paying tenant (Part 1 Model A) — NOT
+ * plots we merely lead an open bid on (that's a separate, transient concept
+ * surfaced in-scene via ownedLeading/outbid, not here). A lease has no
+ * fixed end under Model A (it lasts until the next paid winner activates),
+ * so there is no "soonest expiry" to sort by — stable sector-label order.
+ */
 export function useMyLeases(): LeaseEntry[] {
   const plots = useCityStore((s) => s.plots);
   const myPreBidIds = useCityStore((s) => s.myPreBidIds);
   return useMemo(() => {
     const leases: LeaseEntry[] = [];
     plots.forEach((p) => {
-      if (isOwnedLeading(p, myPreBidIds, p.currentLeaderPreBidId)) {
-        leases.push({ plot: p, endAtMs: p.endAt ? new Date(p.endAt).getTime() : Infinity });
+      if (isTenant(p, myPreBidIds)) {
+        leases.push({ plot: p });
       }
     });
-    leases.sort((a, b) => a.endAtMs - b.endAtMs);
+    leases.sort((a, b) => sectorLabel(a.plot).localeCompare(sectorLabel(b.plot)));
     return leases;
   }, [plots, myPreBidIds]);
 }

@@ -6,11 +6,17 @@
  *   ownedLeading(plot) = plot.status === 'LIVE'
  *     && plot.currentLeaderPreBidId exists
  *     && myPreBidIds.has(currentLeaderPreBidId)
+ *
+ * Tenancy (Part 1 lifecycle fix) is a SEPARATE derivation:
+ *   isTenant(plot) = plot.tenantPreBidId exists && myPreBidIds.has(tenantPreBidId)
+ * Deliberately INDEPENDENT of plot.status — a lease persists through IDLE
+ * and LIVE alike, unlike ownedLeading which only ever describes an open
+ * auction's provisional leader.
  */
 
 import type { PlotDto } from '@/types/api';
 
-/** The ONLY ownership check in the app. */
+/** The ONLY leading-bid check in the app. */
 export function isOwnedLeading(
   plot: PlotDto,
   myPreBidIds: Set<string>,
@@ -19,6 +25,11 @@ export function isOwnedLeading(
   return (
     plot.status === 'LIVE' && !!currentLeaderPreBidId && myPreBidIds.has(currentLeaderPreBidId)
   );
+}
+
+/** The ONLY tenancy check in the app — distinct from isOwnedLeading. */
+export function isTenant(plot: PlotDto, myPreBidIds: Set<string>): boolean {
+  return !!plot.tenantPreBidId && myPreBidIds.has(plot.tenantPreBidId);
 }
 
 /**

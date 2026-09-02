@@ -60,9 +60,15 @@ async function main() {
   });
   const winner = await prisma.plot.findUnique({
     where: { id: plot.id },
-    select: { status: true, currentCycleId: true, currentLeaderPreBidId: true, leaderCompanyName: true },
+    select: { status: true, currentCycleId: true, currentLeaderPreBidId: true },
   });
   const preBids = await prisma.preBid.count({ where: { plotId: plot.id, status: 'ACTIVE' } });
+  const leaderPreBid = winner?.currentLeaderPreBidId
+    ? await prisma.preBid.findUnique({
+        where: { id: winner.currentLeaderPreBidId },
+        select: { companyName: true },
+      })
+    : null;
 
   let pass = true;
   const fail = (msg: string): void => {
@@ -77,7 +83,7 @@ async function main() {
   if (preBids !== 1) fail(`FAIL: expected 1 ACTIVE pre-bid, got ${preBids}`);
 
   if (pass) {
-    console.log(`PASS: 1 claim won, ${conflictCount} x 409, 1 OPEN cycle, leader=${winner?.leaderCompanyName}`);
+    console.log(`PASS: 1 claim won, ${conflictCount} x 409, 1 OPEN cycle, leader=${leaderPreBid?.companyName}`);
   } else {
     process.exit(1);
   }

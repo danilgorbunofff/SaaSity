@@ -3,6 +3,15 @@
 // LIVE (an active AuctionCycle with a leading PreBid). Tier economics live in
 // src/lib/tiers.ts, not here — each cycle snapshots its tier's floor/increment
 // at creation (clean-slate reset, no cross-cycle price escalation).
+//
+// Auction status and tenancy are DELIBERATELY separate concepts (Part 1
+// lifecycle fix, Model A): PlotStatus tracks whether bidding is currently
+// open for the *next* lease; Plot.tenant* tracks who is *currently displayed*
+// on the billboard. A plot can be IDLE (no open auction) while still having
+// an active tenant, and it can be LIVE (someone bidding for the next lease)
+// while an unrelated tenant from a previous cycle remains displayed. The
+// tenant only changes at successful settlement (engine#activateTenant) —
+// never mid-auction, and never wiped by a later auction opening or failing.
 
 generator client {
   provider = "prisma-client"
@@ -51,22 +60,34 @@ model Plot {
 
   currentCycleId String? @unique
   currentCycle   AuctionCycle? @relation("PlotCurrentCycle", fields: [currentCycleId], references: [id])
-  // Denormalized pointer to the current leading PreBid (display cache,
-  // maintained transactionally by the M2 engine — no FK by design).
+  // Denormalized pointer to the CURRENT AUCTION's leading PreBid (display
+  // cache, maintained transactionally by the M2 engine — no FK by design).
+  // Auction-progress only: an opaque id a bidder matches against their own
+  // PreBid ids to derive "am I leading". Never paired with a public brand —
+  // the provisional leader of an open auction is not yet a tenant and must
+  // not receive free billboard exposure before they actually win and pay.
   currentLeaderPreBidId String?
 
-  // Current leader's PUBLIC brand snapshot (display cache, no secrets here —
+  // The ACTIVE TENANT — the last bidder who actually won and was captured.
+  // Distinct from currentLeaderPreBidId: this is who is PUBLICLY DISPLAYED
+  // on the billboard, independent of whether an auction is currently open
+  // for the *next* lease. Only src/server/auction/engine.ts#activateTenant
+  // may write these fields, and only at successful settlement.
+  tenantPreBidId String?
+  tenantSince    DateTime?
+
+  // Tenant's PUBLIC brand snapshot (display cache, no secrets here —
   // PreBid.maxBidCents is the only private field in the system and it never
   // lands on Plot).
-  leaderCompanyName   String?
-  leaderTagline       String?
-  leaderTwitterHandle String?
-  leaderLogoUrl       String?
-  leaderMrrText       String?
-  leaderLogoHidden    Boolean @default(false)
-  // Leader's public marketing URL, shown on the detail card ("Visit site").
+  tenantCompanyName   String?
+  tenantTagline       String?
+  tenantTwitterHandle String?
+  tenantLogoUrl       String?
+  tenantMrrText       String?
+  tenantLogoHidden    Boolean @default(false)
+  // Tenant's public marketing URL, shown on the detail card ("Visit site").
   // Public display-cache field, not part of PreBid privacy.
-  leaderTargetUrl     String?
+  tenantTargetUrl     String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -143,8 +164,10 @@ model PreBid {
   maxBidCents Int
 
   // Public brand submitted with the bid (mirrors the shared 2.1 form
-  // contract). Projected onto Plot's leader* display cache whenever this
-  // PreBid leads its cycle. Only maxBidCents is private — the brand is not.
+  // contract). Only maxBidCents is private — the brand is not, but it is
+  // projected onto Plot's tenant* display cache ONLY at successful paid
+  // settlement (engine#activateTenant) — never while merely leading an
+  // open auction (Part 1 lifecycle fix: no free exposure before payment).
   companyName   String
   tagline       String?
   targetUrl     String

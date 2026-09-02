@@ -45,6 +45,22 @@ export interface Resolution {
 }
 
 /**
+ * Second-price for one candidate over the others: min(own max, highest
+ * other + increment), clamped up to the floor. The single-candidate case
+ * pays the floor. Shared by computeResolution and the worker's capture
+ * cascade so the two can never drift apart.
+ */
+export function secondPriceFor(
+  candidateMaxBidCents: number,
+  otherMaxBidCents: number | null,
+  floorCents: number,
+  incrementCents: number,
+): number {
+  if (otherMaxBidCents === null) return floorCents;
+  return Math.max(floorCents, Math.min(candidateMaxBidCents, otherMaxBidCents + incrementCents));
+}
+
+/**
  * Pure second-price math. activePreBids are the cycle's ACTIVE pre-bids.
  *  - 1 bidder: price = floor.
  *  - N bidders: price = min(leader.maxBid, second.maxBid + increment),
@@ -63,13 +79,12 @@ export function computeResolution(
   );
   const leader = sorted[0];
 
-  let priceCents: number;
-  if (sorted.length === 1) {
-    priceCents = floorCents;
-  } else {
-    priceCents = Math.min(leader.maxBidCents, sorted[1].maxBidCents + incrementCents);
-    if (priceCents < floorCents) priceCents = floorCents;
-  }
+  const priceCents = secondPriceFor(
+    leader.maxBidCents,
+    sorted.length > 1 ? sorted[1].maxBidCents : null,
+    floorCents,
+    incrementCents,
+  );
 
   return {
     leaderPreBidId: leader.id,
@@ -107,7 +122,10 @@ interface ResolveOptions {
  * Loads the cycle's ACTIVE pre-bids, runs computeResolution, and when
  * leader or price changed writes: one ledger Bid (proxy unless the human
  * caller IS the new leader at exactly their submitted max), the cycle's
- * currentPriceCents, and the Plot's leader display cache.
+ * currentPriceCents, and Plot.currentLeaderPreBidId (auction progress only
+ * — never a brand; see activateTenant for the publicly-displayed tenant).
+ * Safe to call repeatedly, including for a brand-new cycle, without ever
+ * disturbing whatever tenant is currently displayed on the plot.
  *
  * Must be called inside a transaction that already holds lockPlot.
  */
@@ -183,20 +201,49 @@ export async function resolveCycle(
     data: { currentPriceCents: resolution.priceCents },
   });
 
+  // AUCTION PROGRESS ONLY: the opaque leading-preBid pointer, never a brand.
+  // A bidder matches this against their own PreBid ids to derive "am I
+  // leading" — the provisional leader of an OPEN auction has not won or
+  // paid anything yet, so their brand must never be written to a
+  // publicly-displayed field here. Tenant activation is a separate,
+  // one-time event handled by activateTenant() at successful settlement.
   await tx.plot.update({
     where: { id: cycle.plotId },
-    data: {
-      currentLeaderPreBidId: resolution.leaderPreBidId,
-      leaderCompanyName: resolution.brand.companyName,
-      leaderTagline: resolution.brand.tagline,
-      leaderTwitterHandle: resolution.brand.twitterHandle,
-      leaderLogoUrl: null,
-      leaderMrrText: resolution.brand.mrrText,
-      leaderTargetUrl: resolution.brand.targetUrl,
-    },
+    data: { currentLeaderPreBidId: resolution.leaderPreBidId },
   });
 
   return resolution;
+}
+
+/**
+ * The ONLY place a plot's publicly-displayed tenant changes. Called by the
+ * worker exactly once per cycle, and only after the capture cascade
+ * (finalize.ts) has actually collected payment for `winner`. Activates the
+ * winner for the full lease — i.e. until THIS function is called again for
+ * the same plot, regardless of whether/when a later auction opens, extends,
+ * or fails to produce a new winner. Must be called inside a transaction
+ * that already holds lockPlot.
+ */
+export async function activateTenant(
+  tx: Tx,
+  plotId: string,
+  winner: { id: string; companyName: string; tagline: string | null; targetUrl: string; twitterHandle: string; mrrText: string | null },
+  now: Date,
+): Promise<void> {
+  await tx.plot.update({
+    where: { id: plotId },
+    data: {
+      tenantPreBidId: winner.id,
+      tenantSince: now,
+      tenantCompanyName: winner.companyName,
+      tenantTagline: winner.tagline,
+      tenantTwitterHandle: winner.twitterHandle,
+      tenantLogoUrl: null,
+      tenantMrrText: winner.mrrText,
+      tenantLogoHidden: false,
+      tenantTargetUrl: winner.targetUrl,
+    },
+  });
 }
 
 export interface QueuedBrand {
@@ -226,12 +273,17 @@ export async function upsertPreBid(
   // Match the bidder's live row for this target. Prefer the exact-cycle row
   // over the queued next-cycle row so a bidder holding both never merges the
   // wrong one (e.g. raising their live bid while a queued row also exists).
+  //
+  // `cycleId` is passed through EXACTLY: `null` must filter `IS NULL`
+  // (the queued next-cycle row), never fall back to "any row" — collapsing
+  // null to undefined silently turned a next-cycle pre-bid into a top-up of
+  // the bidder's row in the RUNNING cycle (phase 2.5 fix).
   const exact = await tx.preBid.findFirst({
     where: {
       plotId: args.plotId,
       bidderId: args.bidderId,
       status: 'ACTIVE',
-      cycleId: args.cycleId ?? undefined,
+      cycleId: args.cycleId,
     },
     orderBy: { createdAt: 'asc' },
   });

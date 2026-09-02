@@ -82,9 +82,6 @@ async function main() {
         status: 'LIVE',
         currentCycleId: cycle.id,
         currentLeaderPreBidId: leaderPreBidId,
-        leaderCompanyName: stressLeads ? 'StressCo' : 'RivalCo',
-        leaderTagline: 'busy-launch fixture',
-        leaderMrrText: '$4.2k MRR',
       },
     });
   }

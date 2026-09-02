@@ -1,13 +1,13 @@
 /**
  * Client-side city store (phase 1.3). Holds the 49-plot map keyed by id,
- * plus the caller's own PreBid ids for the ownership check.
+ * plus the caller's own PreBid ids for the ownership/tenancy checks.
  *
- * Ownership is DERIVED, never trusted from the public API:
- *   ownedLeading(plot) = plot.status === 'LIVE' && myPreBidIds.has(plot.currentLeaderPreBidId)
+ * Ownership and tenancy are DERIVED, never trusted from the public API —
+ * see ./ownership for the two (deliberately distinct) truth tables.
  */
 
 import { create } from 'zustand';
-import { deriveOutbidPlotIds, mergeOutbidPlotIds } from './ownership';
+import { deriveOutbidPlotIds, mergeOutbidPlotIds, isOwnedLeading, isTenant } from './ownership';
 import type { PlotDto } from '@/types/api';
 
 export interface CityState {
@@ -23,16 +23,21 @@ export interface CityState {
   highlightIdle: boolean;
   /** ?debug=1 QA toggle: render ownedLeading skin layer on every plot. */
   debugForceOwned: boolean;
+  /** Phase 2.5 — dev fast-forward available on this deployment (server truth). */
+  mockResolveEnabled: boolean;
   loading: boolean;
   error: string | null;
   lastFetchedAt: number | null;
 
   setPlots: (plots: PlotDto[]) => void;
+  /** Phase 2.4 — patch one plot in place from a realtime event. */
+  patchPlot: (plotId: string, patch: Partial<PlotDto>) => void;
   setMyPreBids: (ids: string[]) => void;
   setSelectedPlotId: (plotId: string | null) => void;
   setHoveredPlotId: (plotId: string | null) => void;
   pulseIdlePlots: () => void;
   setDebugForceOwned: (v: boolean) => void;
+  setMockResolveEnabled: (v: boolean) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   markFetched: () => void;
@@ -46,6 +51,7 @@ export const useCityStore = create<CityState>()((set) => ({
   hoveredPlotId: null,
   highlightIdle: false,
   debugForceOwned: false,
+  mockResolveEnabled: false,
   loading: false,
   error: null,
   lastFetchedAt: null,
@@ -66,6 +72,20 @@ export const useCityStore = create<CityState>()((set) => ({
       }
       return { plots: next, outbidPlotIds: outbid };
     }),
+  // Realtime patch runs the SAME outbid-derivation + selection-fade
+  // pipeline as setPlots — a rival lead arriving over SSE must raise the
+  // outbid state exactly like a full refetch does.
+  patchPlot: (plotId, patch) =>
+    set((state) => {
+      const current = state.plots.get(plotId);
+      if (!current) return state;
+      const patched: PlotDto = { ...current, ...patch };
+      const next = new Map(state.plots);
+      next.set(plotId, patched);
+      const flips = deriveOutbidPlotIds(state.plots, next, state.myPreBidIds);
+      const outbid = mergeOutbidPlotIds(state.outbidPlotIds, flips, next, state.myPreBidIds);
+      return { plots: next, outbidPlotIds: outbid };
+    }),
   setMyPreBids: (ids) => set({ myPreBidIds: new Set(ids) }),
   setSelectedPlotId: (plotId) => set({ selectedPlotId: plotId }),
   setHoveredPlotId: (plotId) => set({ hoveredPlotId: plotId }),
@@ -74,16 +94,15 @@ export const useCityStore = create<CityState>()((set) => ({
     setTimeout(() => set({ highlightIdle: false }), 8000);
   },
   setDebugForceOwned: (v) => set({ debugForceOwned: v }),
+  setMockResolveEnabled: (v) => set({ mockResolveEnabled: v }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
   markFetched: () => set({ lastFetchedAt: Date.now() }),
 }));
 
-/** Ownership derived from store slices - the ONLY ownership check in the app. */
-export function isOwnedLeading(
-  plot: PlotDto,
-  myPreBidIds: Set<string>,
-  currentLeaderPreBidId?: string,
-): boolean {
-  return plot.status === 'LIVE' && !!currentLeaderPreBidId && myPreBidIds.has(currentLeaderPreBidId);
-}
+/**
+ * Re-exported so component imports can pull ownership/tenancy helpers from
+ * the same module as the store hook — ./ownership is the single source of
+ * truth (also unit-tested directly there).
+ */
+export { isOwnedLeading, isTenant };

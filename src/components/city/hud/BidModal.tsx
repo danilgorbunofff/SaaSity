@@ -3,13 +3,19 @@
 /**
  * Phase 2.1 — the shared bid/claim/pre-bid modal. Three modes, one shell.
  * Validation is the SHARED contract from lib/validation/bid-form, so the
- * exact same rules run here and on the server. Submit hits 2.1's MOCK
- * endpoint; 2.2 swaps in the real engine without touching this shell.
+ * exact same rules run here and on the server.
+ *
+ * Phase 2.5: submit now hits the REAL 2.2 engine (claim/bid/prebid) through
+ * `lib/bid/submit-bid`; the 2.1 mock endpoint is deleted. The success view
+ * shows a live countdown to `endAt` and — when the server reports the mock
+ * path is enabled — a dev-only "fast-forward to resolution" button.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCityStore } from '@/lib/city/store';
 import { useBidFormStore } from '@/lib/bid/bid-form-store';
+import { submitBid, type SubmitResult } from '@/lib/bid/submit-bid';
+import { useHudTick, hudNowMs, formatHudCountdown } from '@/lib/city/hud-hooks';
 import {
   validateBidForm,
   minimumBidCents,
@@ -76,11 +82,13 @@ export function BidModal() {
   const tryMarkSubmit = useBidFormStore((s) => s.tryMarkSubmit);
 
   const plot = useCityStore((s) => (plotId ? s.plots.get(plotId) ?? null : null));
+  const mockResolveEnabled = useCityStore((s) => s.mockResolveEnabled);
 
   const [values, setValues] = useState<FormValues>(EMPTY);
   const [touched, setTouched] = useState<Set<string>>(new Set());
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [result, setResult] = useState<SubmitResult | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const firstFieldRef = useRef<HTMLInputElement>(null);
 
@@ -115,6 +123,7 @@ export function BidModal() {
     setConfirmDiscard(false);
     setTouched(new Set());
     setValues(EMPTY);
+    setResult(null);
     closeBidForm();
   };
 
@@ -176,41 +185,29 @@ export function BidModal() {
     }
 
     setStatus('submitting');
-    try {
-      const res = await fetch('/api/mock/bids', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...r.values,
-          mode,
-          tier: plot.tier,
-          currentPriceCents: plot.currentPriceCents ?? undefined,
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        code?: string;
-        error?: string;
-        fieldErrors?: FieldErrors;
-      };
-      if (res.ok && data.ok) {
+    const outcome = await submitBid({ plotId: plot.id, mode, values: r.values });
+
+    switch (outcome.kind) {
+      case 'ok':
+        setResult(outcome);
         setStatus('success');
+        // Re-pull /api/plots + /api/me/bids immediately: the submitting
+        // client must see its own new lease (and leader badge) without
+        // waiting for the SSE echo to round-trip.
+        window.dispatchEvent(new Event('city-refetch'));
         return;
-      }
-      if (res.status === 409 && data.code === 'outbid') {
-        setStatus('outbid');
+      case 'outbid':
+        setStatus('outbid', outcome.message);
         return;
-      }
-      if (res.status === 422 && data.fieldErrors) {
+      case 'fieldErrors':
         // Server-side truth wins — same contract, same field names.
-        setFieldErrors(data.fieldErrors);
+        setFieldErrors(outcome.fieldErrors);
         setTouched(new Set(['companyName', 'tagline', 'targetUrl', 'twitterHandle', 'mrrText', 'maxBidDollars']));
         setStatus('idle');
         return;
-      }
-      setStatus('error', data.error ?? 'Something went wrong — try again.');
-    } catch {
-      setStatus('error', 'Network error — the bid was NOT submitted.');
+      case 'error':
+        setStatus('error', outcome.message);
+        return;
     }
   };
 
@@ -236,9 +233,19 @@ export function BidModal() {
         className="w-full max-w-md rounded-lg border border-[#12303a] bg-[#050508] p-5 shadow-[0_0_40px_rgba(0,240,255,0.2)]"
       >
         {status === 'success' ? (
-          <SuccessView mode={mode} plotLabel={plot.id} onClose={doClose} />
+          <SuccessView
+            mode={mode}
+            plotLabel={plot.id}
+            result={result}
+            mockResolveEnabled={mockResolveEnabled}
+            onClose={doClose}
+          />
         ) : status === 'outbid' ? (
-          <OutbidView onRetry={() => setStatus('idle')} onClose={doClose} />
+          <OutbidView
+            message={serverError}
+            onRetry={() => setStatus('idle')}
+            onClose={doClose}
+          />
         ) : (
           <>
             <div className="flex items-start justify-between gap-3">
@@ -372,19 +379,110 @@ function Field({ label, error, children }: { label: string; error?: string | fal
   );
 }
 
-function SuccessView({ mode, plotLabel, onClose }: { mode: string; plotLabel: string; onClose: () => void }) {
+/**
+ * Success view (phase 2.5): live countdown to the cycle's endAt and, when
+ * the deployment runs the mock path, a dev fast-forward to resolution. Both
+ * come from the server's own submit response — no client-side clock math.
+ */
+function SuccessView({
+  mode,
+  plotLabel,
+  result,
+  mockResolveEnabled,
+  onClose,
+}: {
+  mode: string;
+  plotLabel: string;
+  result: SubmitResult | null;
+  mockResolveEnabled: boolean;
+  onClose: () => void;
+}) {
+  const tick = useHudTick();
+  void tick;
+  const [busy, setBusy] = useState(false);
+  const [ffError, setFfError] = useState<string | null>(null);
+
+  const cycleId = result?.kind === 'ok' ? result.cycleId : null;
+  const endAt = result?.kind === 'ok' ? result.endAt : null;
+  const countdown = endAt ? formatHudCountdown(endAt, hudNowMs()) : null;
+
+  const fastForward = async () => {
+    if (!cycleId || busy) return;
+    setBusy(true);
+    setFfError(null);
+    try {
+      const res = await fetch(`/api/mock-resolve/${encodeURIComponent(cycleId)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'resolve' }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setFfError(body.error ?? `Fast-forward failed (${res.status})`);
+        return;
+      }
+      window.dispatchEvent(new Event('city-refetch'));
+      onClose();
+    } catch {
+      setFfError('Network error — resolution did not run.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const headline =
+    mode === 'prebid'
+      ? 'Pre-bid queued'
+      : mode === 'bid'
+        ? result?.kind === 'ok' && result.youAreLeader
+          ? 'You lead this auction'
+          : 'Bid placed — you were outbid'
+        : 'Plot claimed';
+
   return (
     <div className="py-6 text-center">
       <div className="text-3xl">🛰️</div>
-      <h2 className="mt-2 text-[15px] font-bold uppercase tracking-wider text-[#00f0ff]">Recorded (mock engine)</h2>
-      <p className="mx-auto mt-2 max-w-[280px] text-[12px] leading-snug text-[#9fd8e6]">
+      <h2 className="mt-2 text-[15px] font-bold uppercase tracking-wider text-[#00f0ff]">{headline}</h2>
+      <p className="mx-auto mt-2 max-w-[300px] text-[12px] leading-snug text-[#9fd8e6]">
         {mode === 'prebid'
-          ? `Proxy pre-bid queued for the next cycle of ${plotLabel}.`
-          : mode === 'bid'
-            ? `Bid registered on ${plotLabel}.`
-            : `Claim registered on ${plotLabel}.`}
-        {' '}The real auction engine lands in phase 2.2.
+          ? `Proxy pre-bid queued for the NEXT cycle of ${plotLabel}. The system bids for you up to your max once that cycle opens.`
+          : result?.kind === 'ok' && result.youAreLeader
+            ? `You lead ${plotLabel} at ${formatPrice(result.currentPriceCents ?? 0)}. Rivals can still challenge — soft-close extends the timer on late bids.`
+            : `Your max is recorded on ${plotLabel}. The proxy engine will bid for you up to it when challenged.`}
       </p>
+
+      {countdown ? (
+        <div className="mx-auto mt-4 w-[220px] rounded border border-[#12303a] bg-[#0b0e14] px-3 py-2">
+          <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#6b7a8c]">
+            cycle ends in
+          </div>
+          <div
+            data-testid="bid-success-countdown"
+            className="mt-0.5 font-mono text-xl font-bold text-[#e8f6ff]"
+          >
+            {countdown}
+          </div>
+          {result?.kind === 'ok' && result.softCloseExtended ? (
+            <div className="mt-1 text-[11px] text-[#ffb400]">soft-close: timer extended</div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {mockResolveEnabled && cycleId ? (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => void fastForward()}
+            disabled={busy}
+            title="Dev only — forces endAt to now and runs the real worker resolution"
+            className="rounded border border-[#ffb400]/70 bg-[#ffb400]/10 px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider text-[#ffb400] hover:bg-[#ffb400]/20 disabled:opacity-50"
+          >
+            {busy ? 'Resolving…' : '⏩ Fast-forward to resolution'}
+          </button>
+          {ffError ? <div className="mt-1 text-[11px] text-[#ff5c8a]">{ffError}</div> : null}
+        </div>
+      ) : null}
+
       <button type="button" onClick={onClose} className="mt-4 rounded border border-[#00f0ff]/60 bg-[#00f0ff]/15 px-4 py-2 text-[12px] font-bold uppercase tracking-wider text-[#00f0ff] hover:bg-[#00f0ff]/25">
         Back to the city
       </button>
@@ -392,13 +490,21 @@ function SuccessView({ mode, plotLabel, onClose }: { mode: string; plotLabel: st
   );
 }
 
-function OutbidView({ onRetry, onClose }: { onRetry: () => void; onClose: () => void }) {
+function OutbidView({
+  message,
+  onRetry,
+  onClose,
+}: {
+  message: string | null;
+  onRetry: () => void;
+  onClose: () => void;
+}) {
   return (
     <div className="py-6 text-center">
       <div className="text-3xl">⚠️</div>
       <h2 className="mt-2 text-[15px] font-bold uppercase tracking-wider text-[#ffb400]">You were outbid mid-submit</h2>
       <p className="mx-auto mt-2 max-w-[300px] text-[12px] leading-snug text-[#9fd8e6]">
-        Someone else just took the lead — try a higher amount.
+        {message ?? 'Someone else just took the lead — try a higher amount.'}
       </p>
       <div className="mt-4 flex justify-center gap-2">
         <button type="button" onClick={onRetry} className="rounded border border-[#ffb400]/70 bg-[#ffb400]/15 px-4 py-2 text-[12px] font-bold uppercase tracking-wider text-[#ffb400] hover:bg-[#ffb400]/25">

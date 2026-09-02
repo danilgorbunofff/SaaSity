@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/server/prisma';
 import { serializePlot } from '@/server/serializers';
 import { resolveEndedCycles } from '@/server/auction/worker';
+import { isMockPaymentsEnabled } from '@/server/mock-payments';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,7 +31,9 @@ export async function GET() {
   });
 
   return NextResponse.json(
-    { plots: plots.map(serializePlot) },
+    // mockResolveEnabled: 2.5's dev fast-forward UI keys off server truth,
+    // never a client-side env guess.
+    { plots: plots.map(serializePlot), mockResolveEnabled: isMockPaymentsEnabled() },
     { headers: { 'Cache-Control': 's-maxage=5, stale-while-revalidate' } },
   );
 }

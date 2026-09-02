@@ -16,9 +16,9 @@ Render the full 10x10 isometric **terraced-hill** cyberpunk city from live plot 
   - **OUTER** — 0.9×0.9 footprint, 1.5–2.5 height on `Y=0.0` plinth, dark metallic base, neon border
   - **MID** — 1.85×1.85 footprint, 4.0–6.0 height on `Y=+2.0` platform, glass panels, cyan neon edges, billboard frame
   - **CORE** — 3.8×3.8 footprint, 10–14 height on `Y=+5.0` summit, megastructure with light beam and apex antenna
-- Plot state visuals (`IDLE` / `LIVE`) plus **personal identity layer** — sky beacon, ground aura ring, floating `YOUR HQ` badge, and outbid flashing amber transition
-- **HUD identification system:** 2D radar minimap (10×10, 1:1 grid, fly-to on click) + top `My Leases` quick-switcher dropdown
-- Hover highlight + click selection with detail card (tier, size, current price or tier floor, leader's company + countdown once live)
+- Plot state visuals (`IDLE` / `LIVE`) plus **personal identity layer** — sky beacon, ground aura ring, floating `LEADING` badge (bidding-leader position, distinct from a paid tenant — see [Part 1 lifecycle fix](/docs/reviews/m0-m2-remediation/part-01-product-lifecycle.md)), and outbid flashing amber transition
+- **HUD identification system:** 2D radar minimap (10×10, 1:1 grid, fly-to on click) + top `My Leases` quick-switcher dropdown (counts paid, activated tenancies, not merely leading bids)
+- Hover highlight + click selection with detail card (tier, size, current price or tier floor, standing tenant's company + countdown while live)
 - Performance pass: instancing/batching where sensible, capped pixel ratio, graceful mobile framerate with Html-overlay budget checked
 
 ## Out of scope

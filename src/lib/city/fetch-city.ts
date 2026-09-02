@@ -9,6 +9,8 @@ import type { PlotDto, PlotsResponseDto } from '@/types/api';
 export interface CitySnapshot {
   plots: PlotDto[];
   myPreBidIds: string[];
+  /** Phase 2.5 — server truth: is the dev fast-forward path live here? */
+  mockResolveEnabled: boolean;
 }
 
 export async function fetchCitySnapshot(): Promise<CitySnapshot> {
@@ -26,5 +28,5 @@ export async function fetchCitySnapshot(): Promise<CitySnapshot> {
       .catch(() => [] as string[]),
   ]);
 
-  return { plots: data.plots, myPreBidIds };
+  return { plots: data.plots, myPreBidIds, mockResolveEnabled: data.mockResolveEnabled === true };
 }

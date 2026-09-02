@@ -1,9 +1,11 @@
 'use client';
 
 /**
- * Phase 1.4 "My Leases" quick switcher: header pill + dropdown of plots we
- * currently lead, sorted soonest cycle-end first. Clicking an entry flies
- * the camera to that plot (flyToPlot from camera-rig).
+ * Phase 1.4 "My Leases" quick switcher: header pill + dropdown of plots
+ * where we are the confirmed, paying tenant (Part 1 Model A — NOT plots
+ * we merely lead an open bid on; that transient state shows in-scene via
+ * the roof badge/beacon instead). Clicking an entry flies the camera to
+ * that plot (flyToPlot from camera-rig).
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -97,7 +99,7 @@ export function MyLeasesPill() {
                   }}
                   className="w-full rounded px-2 py-1.5 text-left font-mono text-[11px] text-[#9fd8e6] hover:bg-[#0b0e14] hover:text-[#00f0ff]"
                 >
-                  Sector {sectorLabel(plot)} — {plot.leader?.companyName ?? 'Anonymous'}
+                  Sector {sectorLabel(plot)} — {plot.tenant?.companyName ?? 'Anonymous'}
                 </button>
               </li>
             ))}

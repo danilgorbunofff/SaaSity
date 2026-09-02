@@ -1,8 +1,16 @@
 /**
  * Phase 2.2 — POST /api/plots/[id]/prebid
- * Queue a proxy pre-bid for the NEXT cycle on a plot: allowed on IDLE plots
- * and on LIVE plots (joins as an outbid candidate), never starts a cycle,
- * never triggers Stripe. 200 | 404 | 422 | 429.
+ * Queue a proxy pre-bid for the NEXT cycle on a plot, never this one:
+ * always stored with `cycleId = null`, never starts a cycle, never triggers
+ * Stripe, never runs a resolution pass. 200 | 404 | 409 | 422 | 429.
+ *
+ * Phase 2.5 correction: this route used to attach to a running OPEN cycle
+ * ("joins as an outbid candidate"). That contradicted the plan (2.2 step 4:
+ * "targeting the *next*, not-yet-created cycle") and the UI copy, and it was
+ * a silent no-op whenever the queued max was below the live price — a
+ * pre-bid at the tier floor on a contested cycle could never lead. A
+ * next-cycle commitment stays a next-cycle commitment: the worker's rotation
+ * (2.3) or the next claim attaches it.
  */
 
 import { prisma } from '@/server/prisma';
@@ -30,7 +38,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const limit = checkMutationRateLimit(clientIp(request), bidder.bidderId);
   if (!limit.allowed) {
-    return errorJson(429, 'Too many requests', { retryAfterSeconds: limit.retryAfterSeconds });
+    return errorJson(429, 'Too many requests', {
+      code: 'rate-limited',
+      retryAfterSeconds: limit.retryAfterSeconds,
+    });
   }
 
   const plot = await prisma.plot.findUnique({
@@ -47,52 +58,40 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const result = await prisma.$transaction(async (tx) => {
     await lockPlot(tx, id);
 
-    // LIVE: attach to the running cycle as a normal outbid candidate.
-    // IDLE: queue for the next cycle (cycleId stays null).
-    const openCycle = await tx.auctionCycle.findFirst({
-      where: { plotId: id, status: 'OPEN', endAt: { gt: new Date() } },
-      select: { id: true },
+    // Upward-only guard on the bidder's QUEUED row (cycleId = null) so a
+    // stale client can never lower an existing commitment.
+    const queued = await tx.preBid.findFirst({
+      where: { plotId: id, cycleId: null, bidderId: bidder.bidderId, status: 'ACTIVE' },
+      orderBy: { createdAt: 'asc' },
     });
-    const cycleId = openCycle?.id ?? null;
-
-    if (cycleId) {
-      // Same upward-only guard as /bid so a stale client can't lower a max.
-      const own = await tx.preBid.findFirst({
-        where: { cycleId, bidderId: bidder.bidderId, status: 'ACTIVE' },
-      });
-      if (own && maxBidCents <= own.maxBidCents) {
-        return {
-          code: 'not-higher' as const,
-          yourMaxBidCents: own.maxBidCents,
-        };
-      }
+    if (queued && maxBidCents <= queued.maxBidCents) {
+      return { code: 'not-higher' as const, yourMaxBidCents: queued.maxBidCents };
     }
 
+    // Always queued for the NEXT cycle — never attached to a running one.
     await upsertPreBid(tx, {
       plotId: id,
-      cycleId,
+      cycleId: null,
       bidderId: bidder.bidderId,
       maxBidCents,
       brand: { companyName, tagline, targetUrl, twitterHandle, mrrText },
     });
 
-    return {
-      code: 'ok' as const,
-      attachedToLiveCycle: cycleId !== null,
-      plotStatus: plot.status,
-    };
+    return { code: 'ok' as const, plotStatus: plot.status };
   });
 
   if (result.code === 'not-higher') {
-    return errorJson(409, 'Your new max bid must exceed your current max bid', {
-      yourMaxBidCents: result.yourMaxBidCents,
-    });
+    return errorJson(
+      409,
+      'Your new pre-bid must exceed the one you already have queued for this plot',
+      { code: 'not-higher', yourMaxBidCents: result.yourMaxBidCents },
+    );
   }
 
   return Response.json({
     ok: true,
     plotId: id,
-    attachedToLiveCycle: result.attachedToLiveCycle,
+    queuedForNextCycle: true,
     plotStatus: result.plotStatus,
   });
 }

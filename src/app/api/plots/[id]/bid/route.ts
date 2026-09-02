@@ -14,6 +14,7 @@ import {
   resolveCycle,
   applySoftClose,
 } from '@/server/auction/engine';
+import { emitBidPlaced, emitCycleExtended } from '@/server/realtime/bus';
 import { parseBody, isSameOrigin, errorJson } from '@/server/auction/http';
 
 export const dynamic = 'force-dynamic';
@@ -35,7 +36,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const limit = checkMutationRateLimit(clientIp(request), bidder.bidderId);
   if (!limit.allowed) {
-    return errorJson(429, 'Too many requests', { retryAfterSeconds: limit.retryAfterSeconds });
+    return errorJson(429, 'Too many requests', {
+      code: 'rate-limited',
+      retryAfterSeconds: limit.retryAfterSeconds,
+    });
   }
 
   const plot = await prisma.plot.findUnique({
@@ -44,7 +48,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   });
   if (!plot) return errorJson(404, 'Plot not found');
   if (plot.status !== 'LIVE') {
-    return errorJson(409, 'No active auction on this plot — claim it first');
+    return errorJson(409, 'No active auction on this plot — claim it first', {
+      code: 'no-auction',
+    });
   }
 
   const parsed = parseBody(body, { mode: 'bid', tier: plot.tier });
@@ -116,20 +122,40 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   switch (result.code) {
     case 'no-cycle':
-      return errorJson(409, 'No active auction on this plot');
+      return errorJson(409, 'No active auction on this plot', { code: 'no-cycle' });
     case 'ended':
-      return errorJson(409, 'This auction cycle has already ended');
+      return errorJson(409, 'This auction cycle has already ended', { code: 'ended' });
     case 'too-low':
+      // The live price moved past the caller's submitted max: the modal
+      // surfaces this as the "outbid mid-submit" state, not a generic error.
       return errorJson(409, 'Bid below the current minimum', {
+        code: 'outbid',
         minimumNextBidCents: result.minimumNext,
         currentPriceCents: result.currentPriceCents,
       });
     case 'not-higher':
       return errorJson(409, 'Your new max bid must exceed your current max bid', {
+        code: 'not-higher',
         yourMaxBidCents: result.yourMaxBidCents,
         minimumNextBidCents: result.minimumNext,
       });
-    case 'ok':
+    case 'ok': {
+      // Publish AFTER tx commit (M3 seam constraint: engine txs never
+      // publish). isProxy = the proxy engine outbid a human challenger.
+      // No brand here (Part 1 fix): the provisional leader of an open
+      // auction has not won or paid anything and must never receive free
+      // billboard exposure — only the opaque leaderPreBidId goes out.
+      emitBidPlaced({
+        plotId: id,
+        cycleId: result.cycleId,
+        currentPriceCents: result.priceCents,
+        leaderPreBidId: result.preBidId,
+        isProxy: !result.isLeader,
+        endAt: result.endAt,
+      });
+      if (result.extended) {
+        emitCycleExtended({ plotId: id, cycleId: result.cycleId, endAt: result.endAt });
+      }
       return Response.json({
         ok: true,
         plotId: id,
@@ -140,5 +166,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         youAreLeader: result.isLeader,
         minimumNextBidCents: result.priceCents + result.incrementCents,
       });
+    }
   }
 }

@@ -19,8 +19,9 @@ A 10×10 isometric cyberpunk city where SaaS founders bid in recurring timed auc
 ## Tech stack
 
 - **Next.js** (App Router, TypeScript) · **Tailwind CSS** · **Three.js** + **@react-three/fiber** + **@react-three/drei**
-- **PostgreSQL** + **Prisma 7** · **Stripe** (checkout + pre-auth captures) · **Zustand** · **canvas-confetti**
+- **PostgreSQL** + **Prisma 7** · **Stripe** (SetupIntent pre-auth + manual-capture PaymentIntent — milestone M3, not yet wired) · **Zustand** · **canvas-confetti**
 - Live plot updates via SSE
+- **Current payments status:** M0-M2 run on a `MOCK_PAYMENTS=1` stub loop (no real Stripe calls yet) so the claim → bid → resolve → next-cycle flow is fully exercisable before M3 lands real captures. See [Environment variables](#environment-variables).
 
 ## Getting started
 
@@ -30,7 +31,8 @@ npm install
 
 # 2. Configure env
 cp .env.example .env
-#    Fill in DATABASE_URL (PostgreSQL) and BIDDER_COOKIE_SECRET
+#    Fill in DATABASE_URL (PostgreSQL), BIDDER_COOKIE_SECRET and WORKER_SECRET.
+#    Set MOCK_PAYMENTS=1 to exercise the auction loop before Stripe (M3) lands.
 
 # 3. Apply schema and seed the 49 plots
 npx prisma migrate deploy
@@ -44,11 +46,15 @@ Open http://localhost:3000 to see the city grid.
 
 ## Environment variables
 
+See [`.env.example`](.env.example) for the full, commented list. Summary:
+
 | Variable                                                        | Required         | Description                                       |
 | --------------------------------------------------------------- | ---------------- | ------------------------------------------------- |
 | `DATABASE_URL`                                                  | yes              | PostgreSQL connection string                      |
 | `BIDDER_COOKIE_SECRET`                                          | yes              | HMAC secret for anonymous bidder identity cookies |
-| Stripe keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, ...) | later milestones | Payments                                          |
+| `WORKER_SECRET`                                                 | yes (for cron)    | Shared secret authorizing `POST /api/cron/resolve` (expiry-sweep worker); the route always 401s without it |
+| `MOCK_PAYMENTS`                                                 | yes, pre-M3       | Set to `1` to run the mock capture/cancel/authorize loop; unset means every capture fails closed (no unpaid winners) |
+| Stripe keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, ...) | milestone M3      | Real payments (not yet wired)                     |
 
 ## Project layout
 

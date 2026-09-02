@@ -84,7 +84,7 @@ async function main() {
   });
   const plotRow = await prisma.plot.findUnique({
     where: { id: plot.id },
-    select: { currentLeaderPreBidId: true, leaderCompanyName: true },
+    select: { currentLeaderPreBidId: true },
   });
   const bidCount = await prisma.bid.count({ where: { cycleId: cycle.id } });
 
@@ -121,7 +121,7 @@ async function main() {
   }
 
   console.log(
-    `pre-bids=${preBids.length} ticks=${bidCount} price=${cycle.currentPriceCents} leader=${plotRow?.leaderCompanyName}`,
+    `pre-bids=${preBids.length} ticks=${bidCount} price=${cycle.currentPriceCents} leader=${preBids[0]?.companyName}`,
   );
 
   if (pass) console.log('PASS: concurrent bids converged to correct second-price state');

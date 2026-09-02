@@ -335,17 +335,18 @@ function AuraRing({ size, y, tier, outbid }: { size: number; y: number; tier: 'O
 
 /**
  * Persistent billboard badge (drei Html transform):
- *   owned:  [★ YOUR HQ: {name} • mm:ss left]
+ *   owned:  [★ LEADING • mm:ss left]
  *   outbid: [⚠️ OUTBID: +$X to retain]  (flashing amber)
+ * Deliberately carries no brand/company name — it reflects the VIEWER's own
+ * bid-leading status on an OPEN auction, not a confirmed tenancy, and the
+ * provisional leader's brand is never public (Part 1 lifecycle fix).
  */
 function RoofBadge({
-  label,
   tier,
   endAt,
   outbid,
   y,
 }: {
-  label: string;
   tier: PlotDto['tier'];
   endAt: string | undefined;
   outbid: boolean;
@@ -355,7 +356,7 @@ function RoofBadge({
 
   const text = outbid
     ? `⚠️ OUTBID: +${formatPrice(tierIncrementCents(tier))} to retain`
-    : `★ YOUR HQ: ${label}${countdown ? ` • ${countdown} left` : ''}`;
+    : `★ LEADING${countdown ? ` • ${countdown} left` : ''}`;
 
   return (
     <Html center transform position={[0, y, 0]} zIndexRange={[20, 0]}>
@@ -378,6 +379,68 @@ function RoofBadge({
         {text}
       </div>
       <style>{`@keyframes city-outbid-flash { 50% { opacity: 0.25; } }`}</style>
+    </Html>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Tenant billboard on the MID tower faces — independent of auction     */
+/* LIVE/IDLE state (Part 1 Model A: a lease persists through IDLE).     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Cheap text-plane billboard (drei Html, same trick as RoofBadge — no font
+ * fetch, no troika). Shows the CURRENT TENANT's company name and updates
+ * the instant the store patches a new tenant at cycle:resolved — never the
+ * provisional leader of an open auction. Art polish (real signage, logos)
+ * is phase 4.3.
+ */
+function TenantBillboard({
+  name,
+  mrrText,
+  size,
+  y,
+}: {
+  name: string;
+  mrrText: string | null;
+  size: number;
+  y: number;
+}) {
+  return (
+    <Html center transform position={[0, y, size / 2 + 0.04]} zIndexRange={[18, 0]}>
+      <div
+        data-testid="tenant-billboard"
+        style={{
+          pointerEvents: 'none',
+          width: 132,
+          padding: '3px 6px',
+          borderRadius: 3,
+          border: `1px solid ${NEON.cyan}`,
+          background: 'rgba(4, 12, 20, 0.82)',
+          boxShadow: `0 0 10px ${NEON.cyan}`,
+          fontFamily: 'ui-monospace, monospace',
+          textAlign: 'center',
+          color: '#e8f6ff',
+        }}
+      >
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: 0.3,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {name}
+        </div>
+        {mrrText ? (
+          <div style={{ marginTop: 1, fontSize: 8, color: NEON.amber, whiteSpace: 'nowrap' }}>
+            {mrrText}
+          </div>
+        ) : null}
+      </div>
     </Html>
   );
 }
@@ -408,7 +471,11 @@ export function PlotSkins({ plot, height, baseY, ownedLeading, outbid, hovered, 
   const closingSoon = useClosingSoon(plot.endAt);
   const showPersonal = ownedLeading || outbid;
   const badgeY = baseY + height + (plot.tier === 'CORE' ? 2.6 : 1.0);
-  const label = plot.leader?.companyName ?? plot.id;
+  // The tenant's name on the tower face. MID only (CORE's summit is the 4.3
+  // art-pass surface); skipped in perf-minimal mode. Independent of
+  // plot.status — a lease persists through IDLE (Part 1 Model A), so the
+  // tenant billboard must never be gated on an auction being open.
+  const showBillboard = plot.tier === 'MID' && !!plot.tenant?.companyName && !PERF_MINIMAL;
 
   return (
     <group>
@@ -429,11 +496,19 @@ export function PlotSkins({ plot, height, baseY, ownedLeading, outbid, hovered, 
       {idlePulse && plot.status === 'IDLE' && (
         <IdlePulseRing size={TIER_MESH[plot.tier].size} y={baseY + 0.07} tier={plot.tier} />
       )}
+      {showBillboard && (
+        <TenantBillboard
+          name={plot.tenant?.companyName ?? ''}
+          mrrText={plot.tenant?.mrrText ?? null}
+          size={TIER_MESH[plot.tier].size}
+          y={height * 0.62}
+        />
+      )}
       {showPersonal && !PERF_MINIMAL && (
         <group>
           <Beacon baseY={baseY} height={height} outbid={outbid} />
           <AuraRing size={TIER_MESH[plot.tier].size} y={baseY + 0.03} tier={plot.tier} outbid={outbid} />
-          <RoofBadge label={label} tier={plot.tier} endAt={plot.endAt} outbid={outbid} y={badgeY} />
+          <RoofBadge tier={plot.tier} endAt={plot.endAt} outbid={outbid} y={badgeY} />
         </group>
       )}
     </group>

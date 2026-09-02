@@ -15,6 +15,7 @@ import {
   upsertPreBid,
   resolveCycle,
 } from '@/server/auction/engine';
+import { emitBidPlaced } from '@/server/realtime/bus';
 import { parseBody, isSameOrigin, errorJson } from '@/server/auction/http';
 
 export const dynamic = 'force-dynamic';
@@ -36,7 +37,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const limit = checkMutationRateLimit(clientIp(request), bidder.bidderId);
   if (!limit.allowed) {
-    return errorJson(429, 'Too many requests', { retryAfterSeconds: limit.retryAfterSeconds });
+    return errorJson(429, 'Too many requests', {
+      code: 'rate-limited',
+      retryAfterSeconds: limit.retryAfterSeconds,
+    });
   }
 
   // Plot must exist; tier needed for the shared-contract floor check.
@@ -89,8 +93,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   });
 
   if (result.conflict) {
-    return errorJson(409, 'Plot already has an active auction', { plotId: id });
+    // Someone claimed it milliseconds earlier — the modal's outbid state.
+    return errorJson(409, 'Plot already has an active auction', {
+      code: 'outbid',
+      plotId: id,
+    });
   }
+
+  // Publish AFTER tx commit (M3 seam constraint). No brand here (Part 1
+  // fix): the provisional leader hasn't won or paid anything and must
+  // never receive free billboard exposure — only the opaque preBid id.
+  emitBidPlaced({
+    plotId: id,
+    cycleId: result.cycleId,
+    currentPriceCents: result.priceCents,
+    leaderPreBidId: result.preBidId,
+    isProxy: !result.isLeader,
+    endAt: result.endAt,
+  });
 
   return Response.json({
     ok: true,

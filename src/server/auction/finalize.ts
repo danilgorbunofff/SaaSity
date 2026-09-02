@@ -12,16 +12,21 @@
  */
 
 import type { PreBid } from '@/generated/prisma/client';
+import { requireMockPayments } from '@/server/mock-payments';
 
 /**
  * M3 STUB — real implementation captures the manual-capture PaymentIntent
  * for exactly `amountCents` (<= authorized maxBidCents).
  * Returns the captured amount on success; throws on failure.
+ *
+ * Phase 2.5: gated on MOCK_PAYMENTS=1 — without the flag this throws, so a
+ * misconfigured deployment never crowns an unpaid winner.
  */
 export async function capturePreBidAuthorization(
   preBid: Pick<PreBid, 'id' | 'stripePaymentIntentId'>,
   amountCents: number,
 ): Promise<number> {
+  requireMockPayments('capturePreBidAuthorization');
   if (amountCents < 0) {
     throw new Error(`Invalid capture amount: ${amountCents} for preBid ${preBid.id}`);
   }
@@ -35,7 +40,7 @@ export async function capturePreBidAuthorization(
 export async function cancelPreBidAuthorization(
   _preBid: Pick<PreBid, 'id' | 'stripePaymentIntentId'>,
 ): Promise<void> {
-  // no-op in 2.3
+  requireMockPayments('cancelPreBidAuthorization');
 }
 
 // ---------------------------------------------------------------------------
@@ -76,6 +81,7 @@ export function clearAttachAuthFailures(): void {
 export async function authorizePreBidAtAttach(
   preBid: Pick<PreBid, 'id' | 'stripePaymentIntentId'>,
 ): Promise<void> {
+  requireMockPayments('authorizePreBidAtAttach');
   if (injectedAttachFailures.has(preBid.id)) {
     throw new Error(`Injected attach-auth failure for preBid ${preBid.id}`);
   }
@@ -84,8 +90,12 @@ export async function authorizePreBidAtAttach(
 
 // ---------------------------------------------------------------------------
 
-/** Private ledger row — never serialize (includes the payment intent ref). */
-type CandidateRow = Pick<
+/**
+ * Ledger row the cascade works on — never serialized (includes the payment
+ * intent ref). Exported because it is part of `runCaptureCascade`'s public
+ * signature.
+ */
+export type CandidateRow = Pick<
   PreBid,
   | 'id'
   | 'bidderId'

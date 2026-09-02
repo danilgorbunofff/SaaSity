@@ -17,6 +17,7 @@ import {
 import { registerCameraControls } from '@/lib/city/camera-rig';
 import { generateInitialGrid } from '@/lib/grid';
 import { fetchCitySnapshot } from '@/lib/city/fetch-city';
+import { startRealtime, stopRealtime } from '@/lib/city/realtime';
 import { useCityStore, isOwnedLeading } from '@/lib/city/store';
 import { TerracedHill } from './TerracedHill';
 import { Plot, OuterTowerField, plotHeight, type PlotMeshData } from './TierMeshes';
@@ -65,6 +66,7 @@ function DataBinder() {
   const setError = useCityStore((s) => s.setError);
   const setPlots = useCityStore((s) => s.setPlots);
   const setMyPreBids = useCityStore((s) => s.setMyPreBids);
+  const setMockResolveEnabled = useCityStore((s) => s.setMockResolveEnabled);
   const markFetched = useCityStore((s) => s.markFetched);
 
   const load = useCallback(async () => {
@@ -74,13 +76,14 @@ function DataBinder() {
       const snap = await fetchCitySnapshot();
       setPlots(snap.plots);
       setMyPreBids(snap.myPreBidIds);
+      setMockResolveEnabled(snap.mockResolveEnabled);
       markFetched();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'unknown fetch error');
     } finally {
       setLoading(false);
     }
-  }, [setLoading, setError, setPlots, setMyPreBids, markFetched]);
+  }, [setLoading, setError, setPlots, setMyPreBids, setMockResolveEnabled, markFetched]);
 
   useEffect(() => {
     void load();
@@ -93,6 +96,15 @@ function DataBinder() {
     };
   }, [load]);
 
+  return null;
+}
+
+/** Phase 2.4 — SSE lifecycle binder: connect on mount, clean teardown. */
+function RealtimeBinder() {
+  useEffect(() => {
+    startRealtime();
+    return () => stopRealtime();
+  }, []);
   return null;
 }
 
@@ -308,6 +320,7 @@ export function CityScene() {
       <CityPlots />
 
       <DataBinder />
+      <RealtimeBinder />
       <LoadingChip />
       <ErrorChip />
       <ControlsRig />

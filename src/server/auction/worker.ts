@@ -3,6 +3,8 @@ import {
   lockPlot,
   resolveCycle,
   attachQueuedPreBids,
+  activateTenant,
+  secondPriceFor,
 } from '@/server/auction/engine';
 import {
   runCaptureCascade,
@@ -10,7 +12,7 @@ import {
   cancelPreBidAuthorization,
   authorizePreBidAtAttach,
 } from '@/server/auction/finalize';
-import { publish } from '@/server/realtime/bus';
+import { emitCycleResolved } from '@/server/realtime/bus';
 import { TIERS, RESOLVING_TIMEOUT_MINUTES } from '@/lib/tiers';
 
 /**
@@ -29,15 +31,22 @@ import { TIERS, RESOLVING_TIMEOUT_MINUTES } from '@/lib/tiers';
  *   6. Publishes realtime events.
  */
 
-interface Outcome {
+export interface Outcome {
   plotId: string;
   cycleId: string;
   winnerPreBidId: string | null;
   winnerBidderId: string | null;
-  winnerCompanyName: string | null;
+  winnerBrand: {
+    companyName: string | null;
+    tagline: string | null;
+    targetUrl: string | null;
+    twitterHandle: string | null;
+    mrrText: string | null;
+  } | null;
   clearingPriceCents: number | null;
   nextCycleId: string | null;
   nextEndAt: Date | null;
+  openingPriceCents: number | null;
 }
 
 async function recoverStuckResolving(now: Date): Promise<number> {
@@ -49,7 +58,15 @@ async function recoverStuckResolving(now: Date): Promise<number> {
   return res.count;
 }
 
-async function resolveOneCycle(cycleId: string, now: Date): Promise<Outcome | null> {
+/**
+ * Resolve exactly one cycle by id. Exported so 2.5's dev fast-forward
+ * trigger calls THIS function (never a parallel implementation) — the mock
+ * path and the cron path are byte-identical from here down.
+ *
+ * Returns null when the cycle was not OPEN (already resolved, or another
+ * worker/trigger claimed it first).
+ */
+export async function resolveOneCycle(cycleId: string, now: Date): Promise<Outcome | null> {
   // Race arbiter: exactly one claimant flips OPEN -> RESOLVING.
   const claimed = await prisma.auctionCycle.updateMany({
     where: { id: cycleId, status: 'OPEN' },
@@ -96,14 +113,17 @@ async function resolveOneCycle(cycleId: string, now: Date): Promise<Outcome | nu
     const cascade = await runCaptureCascade({
       candidates,
       computeRemainingPrice: (candidate, remaining) => {
-        if (remaining.length === 0) {
-          // Last candidate standing always wins at the cycle floor.
-          return cycleRow.floorPriceCents;
-        }
-        const highestOther = remaining.reduce((m, r) => Math.max(m, r.maxBidCents), 0);
-        return Math.max(
+        // Shared second-price math — the same formula computeResolution
+        // uses, so the cascade can never drift from the engine's pricing.
+        const highestOther =
+          remaining.length === 0
+            ? null
+            : remaining.reduce((m, r) => Math.max(m, r.maxBidCents), 0);
+        return secondPriceFor(
+          candidate.maxBidCents,
+          highestOther,
           cycleRow.floorPriceCents,
-          Math.min(candidate.maxBidCents, highestOther + cycleRow.incrementCents),
+          cycleRow.incrementCents,
         );
       },
       capture: (candidate, amountCents) =>
@@ -144,9 +164,15 @@ async function resolveOneCycle(cycleId: string, now: Date): Promise<Outcome | nu
 
       if (winnerRow) {
         // Re-run resolution BEFORE marking the winner WON: the winner is
-        // still ACTIVE here, so resolveCycle rotates the winner's brand
-        // onto the plot and records the final repricing tick.
+        // still ACTIVE here, so this records the cycle's final repricing
+        // tick if a capture failure upstream promoted a lower bidder (pure
+        // ledger/currentPriceCents bookkeeping now — resolveCycle no longer
+        // touches any publicly-displayed field).
         await resolveCycle(tx, reRead, {});
+        // Activate the tenant — the ONLY place a plot's publicly-displayed
+        // tenant changes. Decoupled from resolveCycle, so opening (or
+        // failing to open) a next cycle below can never disturb it.
+        await activateTenant(tx, reRead.plotId, winnerRow, now);
         await tx.preBid.update({
           where: { id: winnerRow.id },
           data: { status: 'WON' },
@@ -171,6 +197,7 @@ async function resolveOneCycle(cycleId: string, now: Date): Promise<Outcome | nu
 
       let nextCycleId: string | null = null;
       let nextEndAt: Date | null = null;
+      let openingPriceCents: number | null = null;
 
       if (queued.length > 0) {
         const cfg = TIERS[plotTier as keyof typeof TIERS];
@@ -191,7 +218,7 @@ async function resolveOneCycle(cycleId: string, now: Date): Promise<Outcome | nu
         nextEndAt = endAt;
         await tx.plot.update({
           where: { id: reRead.plotId },
-          data: { currentCycleId: nextCycle.id },
+          data: { status: 'LIVE', currentCycleId: nextCycle.id },
         });
         await attachQueuedPreBids(tx, reRead.plotId, nextCycle.id);
 
@@ -215,22 +242,34 @@ async function resolveOneCycle(cycleId: string, now: Date): Promise<Outcome | nu
           orderBy: [{ maxBidCents: 'desc' }, { createdAt: 'asc' }],
         });
         if (surviving.length > 0) {
-          await resolveCycle(tx, nextCycle, {});
+          const opening = await resolveCycle(tx, nextCycle, {});
+          openingPriceCents = opening?.priceCents ?? null;
+        } else {
+          // Every queued pre-bid failed authorization at attach: the cycle
+          // would be an empty shell nobody can bid on until the sweep finds
+          // it. Cancel it; the IDLE transition below applies.
+          await tx.auctionCycle.update({
+            where: { id: nextCycle.id },
+            data: { status: 'CANCELLED' },
+          });
+          nextCycleId = null;
+          nextEndAt = null;
         }
-      } else {
+      }
+
+      if (nextCycleId === null) {
+        // No next cycle materialized: the plot becomes claimable again at
+        // the tier floor. Auction progress resets (no open auction, no
+        // leader pointer) but tenant* fields are NEVER touched here — the
+        // active tenant (if any) persists through IDLE exactly as they do
+        // through a next auction opening. Tenancy only ever changes via
+        // activateTenant, which already ran above when winnerRow existed.
         await tx.plot.update({
           where: { id: reRead.plotId },
           data: {
             status: 'IDLE',
             currentCycleId: null,
             currentLeaderPreBidId: null,
-            leaderCompanyName: null,
-            leaderTagline: null,
-            leaderTwitterHandle: null,
-            leaderLogoUrl: null,
-            leaderLogoHidden: false,
-            leaderMrrText: null,
-            leaderTargetUrl: null,
           },
         });
       }
@@ -239,21 +278,56 @@ async function resolveOneCycle(cycleId: string, now: Date): Promise<Outcome | nu
         winnerRow,
         nextCycleId,
         nextEndAt,
+        openingPriceCents,
       };
     });
 
     if (settled === null) return null;
 
-    return {
+    const outcome: Outcome = {
       plotId,
       cycleId,
       winnerPreBidId: cascade.winnerPreBidId,
       winnerBidderId: settled.winnerRow?.bidderId ?? null,
-      winnerCompanyName: settled.winnerRow?.companyName ?? null,
+      winnerBrand: settled.winnerRow
+        ? {
+            companyName: settled.winnerRow.companyName,
+            tagline: settled.winnerRow.tagline,
+            targetUrl: settled.winnerRow.targetUrl,
+            twitterHandle: settled.winnerRow.twitterHandle,
+            mrrText: settled.winnerRow.mrrText,
+          }
+        : null,
       clearingPriceCents: cascade.clearingPriceCents,
       nextCycleId: settled.nextCycleId,
       nextEndAt: settled.nextEndAt,
+      openingPriceCents: settled.openingPriceCents,
     };
+
+    // ONE spec-shaped event per resolution, emitted HERE (not by callers):
+    // the cron sweep and 2.5's dev fast-forward share this exact path, so
+    // every resolution publishes and neither caller can drift. Winner brand
+    // (or null for the IDLE path) + the next cycle's opening state. No
+    // bidderId goes out — see bus.ts's emitCycleResolved doc.
+    emitCycleResolved({
+      plotId: outcome.plotId,
+      cycleId: outcome.cycleId,
+      winner:
+        outcome.winnerBrand != null && outcome.winnerPreBidId != null
+          ? { preBidId: outcome.winnerPreBidId, brand: outcome.winnerBrand }
+          : null,
+      clearingPriceCents: outcome.clearingPriceCents,
+      nextCycle:
+        outcome.nextCycleId != null && outcome.nextEndAt != null
+          ? {
+              cycleId: outcome.nextCycleId,
+              endAt: outcome.nextEndAt.toISOString(),
+              openingPriceCents: outcome.openingPriceCents,
+            }
+          : null,
+    });
+
+    return outcome;
   } finally {
     // Safety net: if anything above threw after claiming, un-stick the
     // cycle so the next sweep retries it. RESOLVED cycles are untouched.
@@ -279,27 +353,9 @@ export async function resolveEndedCycles(): Promise<{ recovered: number; resolve
   let resolved = 0;
   for (const { id } of ended) {
     const outcome = await resolveOneCycle(id, now);
+    // resolveOneCycle publishes cycle:resolved itself — the sweep only counts.
     if (outcome === null) continue;
     resolved += 1;
-    publish({
-      type: 'cycle:resolved',
-      plotId: outcome.plotId,
-      cycleId: outcome.cycleId,
-      winner:
-        outcome.winnerBidderId != null
-          ? { bidderId: outcome.winnerBidderId, companyName: outcome.winnerCompanyName ?? null }
-          : null,
-      clearingPriceCents: outcome.clearingPriceCents,
-    });
-    if (outcome.nextCycleId != null && outcome.nextEndAt != null) {
-      publish({
-        type: 'cycle:opened',
-        plotId: outcome.plotId,
-        cycleId: outcome.nextCycleId,
-        endAt: outcome.nextEndAt.toISOString(),
-        openingPriceCents: null,
-      });
-    }
   }
 
   return { recovered, resolved };

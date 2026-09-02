@@ -33,7 +33,7 @@ Stand up the project skeleton and the entire data layer so every later milestone
 
 - Deployed app URL showing a placeholder page reading live data
 - Prisma schema + migration + seed committed and reproducible (`db seed` from scratch)
-- Queryable plots API returning all 49 plots with coords, tier, status, and (once live) current price/leader/countdown
+- Queryable plots API returning all 49 plots with coords, tier, status, and (once live) current price/leader/countdown — plus a plot's standing tenant brand independent of live/idle status, per the [Part 1 lifecycle fix](/docs/reviews/m0-m2-remediation/part-01-product-lifecycle.md)
 
 ## Definition of done
 
