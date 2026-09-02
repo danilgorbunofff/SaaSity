@@ -6,7 +6,7 @@
 
 import { prisma } from '@/server/prisma';
 import { getOrCreateBidderPayload } from '@/server/bidder-cookie';
-import { checkRateLimit, clientIp } from '@/server/rate-limit';
+import { checkMutationRateLimit, clientIp } from '@/server/rate-limit';
 import { TIERS } from '@/lib/tiers';
 import {
   lockPlot,
@@ -34,7 +34,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const bidder = await getOrCreateBidderPayload();
 
-  const limit = checkRateLimit(`${clientIp(request)}:${bidder.bidderId}`);
+  const limit = checkMutationRateLimit(clientIp(request), bidder.bidderId);
   if (!limit.allowed) {
     return errorJson(429, 'Too many requests', { retryAfterSeconds: limit.retryAfterSeconds });
   }
@@ -50,6 +50,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!parsed.ok) return parsed.response;
 
   const { maxBidCents, companyName, tagline, targetUrl, twitterHandle, mrrText } = parsed.values;
+  // Response floor fallback only — the cycle snapshot is authoritative for
+  // all engine math; TIERS is consulted just in case resolution returns null
+  // (startCycle always creates a snapshot, so this is belt-and-braces).
   const floor = TIERS[plot.tier].floorCents;
 
   const result = await prisma.$transaction(async (tx) => {
@@ -81,6 +84,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       endAt: claim.endAt.toISOString(),
       priceCents: resolution?.priceCents ?? floor,
       isLeader: resolution?.leaderBidderId === bidder.bidderId,
+      incrementCents: claim.incrementCents,
     };
   });
 
@@ -95,6 +99,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     endAt: result.endAt,
     currentPriceCents: result.priceCents,
     youAreLeader: result.isLeader,
-    minimumNextBidCents: result.priceCents + TIERS[plot.tier].incrementCents,
+    minimumNextBidCents: result.priceCents + result.incrementCents,
   });
 }

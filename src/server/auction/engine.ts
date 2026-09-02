@@ -118,7 +118,7 @@ export async function resolveCycle(
     'id' | 'plotId' | 'floorPriceCents' | 'incrementCents' | 'currentPriceCents'
   >,
   options: ResolveOptions = {},
-): Promise<Resolution | null> {
+): Promise<(Resolution & { tickId?: string }) | null> {
   const active = await tx.preBid.findMany({
     where: { cycleId: cycle.id, status: 'ACTIVE' },
     select: {
@@ -152,6 +152,30 @@ export async function resolveCycle(
         isProxy: !plotIsLeader,
       },
     });
+  }
+
+  // Leader rotated without a price move (e.g. earlier same-max bidder wins
+  // the tie-break): the ledger must still show the takeover even though the
+  // price didn't move. Skip the very first tick when no price existed yet —
+  // the priceChanged branch above already wrote it.
+  if (!priceChanged && cycle.currentPriceCents !== null) {
+    const lastTick = await tx.bid.findFirst({
+      where: { cycleId: cycle.id },
+      orderBy: { createdAt: 'desc' },
+      select: { preBidId: true },
+    });
+    if (lastTick?.preBidId !== resolution.leaderPreBidId) {
+      await tx.bid.create({
+        data: {
+          cycleId: cycle.id,
+          plotId: cycle.plotId,
+          preBidId: resolution.leaderPreBidId,
+          bidderId: resolution.leaderBidderId,
+          amountCents: resolution.priceCents,
+          isProxy: true,
+        },
+      });
+    }
   }
 
   await tx.auctionCycle.update({
@@ -199,32 +223,56 @@ export async function upsertPreBid(
     brand: QueuedBrand;
   },
 ): Promise<string> {
-  const existing = await tx.preBid.findFirst({
+  // Match the bidder's live row for this target. Prefer the exact-cycle row
+  // over the queued next-cycle row so a bidder holding both never merges the
+  // wrong one (e.g. raising their live bid while a queued row also exists).
+  const exact = await tx.preBid.findFirst({
     where: {
       plotId: args.plotId,
       bidderId: args.bidderId,
       status: 'ACTIVE',
-      // Match the bidder's live row for this target: exact-cycle row, or the
-      // queued next-cycle row when cycleId is null (or being set now).
-      OR: [
-        { cycleId: args.cycleId ?? undefined },
-        { cycleId: null },
-      ],
+      cycleId: args.cycleId ?? undefined,
     },
     orderBy: { createdAt: 'asc' },
   });
 
-  if (existing && existing.maxBidCents >= args.maxBidCents && existing.cycleId === args.cycleId) {
-    // Existing commitment already at least as strong for this target — keep it.
-    return existing.id;
-  }
-
-  if (existing) {
+  if (exact) {
+    if (exact.maxBidCents >= args.maxBidCents) {
+      // Existing commitment already at least as strong for this target — keep it.
+      return exact.id;
+    }
     await tx.preBid.update({
-      where: { id: existing.id },
+      where: { id: exact.id },
       data: {
         maxBidCents: args.maxBidCents,
-        // Moving from queued (null) into the live cycle on attach.
+        companyName: args.brand.companyName,
+        tagline: args.brand.tagline ?? null,
+        targetUrl: args.brand.targetUrl,
+        twitterHandle: args.brand.twitterHandle,
+        mrrText: args.brand.mrrText ?? null,
+      },
+    });
+    return exact.id;
+  }
+
+  // No exact-cycle row: fall back to the bidder's queued next-cycle row
+  // (cycleId null) — usable for a next-cycle target or when attaching it
+  // into a freshly opened live cycle (cycleId moves null -> cycle id).
+  const queued = await tx.preBid.findFirst({
+    where: {
+      plotId: args.plotId,
+      bidderId: args.bidderId,
+      status: 'ACTIVE',
+      cycleId: null,
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  if (queued) {
+    await tx.preBid.update({
+      where: { id: queued.id },
+      data: {
+        maxBidCents: args.maxBidCents,
         cycleId: args.cycleId,
         companyName: args.brand.companyName,
         tagline: args.brand.tagline ?? null,
@@ -233,7 +281,7 @@ export async function upsertPreBid(
         mrrText: args.brand.mrrText ?? null,
       },
     });
-    return existing.id;
+    return queued.id;
   }
 
   const created = await tx.preBid.create({
@@ -333,6 +381,12 @@ export async function applySoftClose(
 
   const pushMs = Math.min(windowMs, extensionBudgetLeft);
   const newEndAt = new Date(Math.max(cycle.endAt.getTime(), receivedAt.getTime() + pushMs));
+
+  // A partial grant may be smaller than the time already left — then nothing
+  // moves and no budget is consumed.
+  if (newEndAt.getTime() <= cycle.endAt.getTime()) {
+    return { extended: false, newEndAt: cycle.endAt };
+  }
 
   await tx.auctionCycle.update({
     where: { id: cycle.id },

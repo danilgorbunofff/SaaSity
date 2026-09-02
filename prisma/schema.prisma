@@ -153,6 +153,10 @@ model PreBid {
 
   status PreBidStatus @default(ACTIVE)
 
+  // Set when this pre-bid leaves ACTIVE without winning: capture_failed
+  // (cascade), expired (attach-time auth failure), cancelled.
+  lostReason String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

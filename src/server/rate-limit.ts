@@ -1,8 +1,14 @@
 /**
  * Phase 2.2 — in-memory fixed-window rate limit for mutating auction
- * endpoints. Single-node dev guard: 10 mutating requests per minute per
- * (IP + bidder). Multi-node production would swap this for Redis — the
- * call sites only depend on `checkRateLimit` returning allowed/denied.
+ * endpoints. Two stacked guards, both in-memory fixed windows:
+ *  - per (IP + bidder): 10 mutating requests / minute (documented limit);
+ *  - per IP only: 30 mutating requests / minute — a cookie-less client mints
+ *    a fresh bidderId per request, so the combined key alone would never trip
+ *    for it. The IP bucket closes that rotation hole while leaving a shared
+ *    NAT/office IP room for several legitimate bidders.
+ * Single-node dev guard. Multi-node production would swap this for Redis —
+ * the call sites only depend on `checkMutationRateLimit` returning
+ * allowed/denied.
  */
 
 interface Bucket {
@@ -11,7 +17,13 @@ interface Bucket {
 }
 
 const WINDOW_MS = 60_000;
-const MAX_PER_WINDOW = 10;
+
+/** Limit for the combined ip:bidderId key. */
+const MAX_PER_IDENTITY = 10;
+
+/** Limit for the ip-only key (rotation guard). */
+const MAX_PER_IP = 30;
+
 const buckets = new Map<string, Bucket>();
 
 // Periodically drop stale buckets so the map cannot grow unbounded.
@@ -31,16 +43,14 @@ export interface RateLimitResult {
   retryAfterSeconds: number;
 }
 
-export function checkRateLimit(key: string, now: number = Date.now()): RateLimitResult {
-  sweep(now);
-
+function consume(key: string, max: number, now: number): RateLimitResult {
   const bucket = buckets.get(key);
   if (!bucket || now - bucket.windowStart >= WINDOW_MS) {
     buckets.set(key, { windowStart: now, count: 1 });
     return { allowed: true, retryAfterSeconds: 0 };
   }
 
-  if (bucket.count >= MAX_PER_WINDOW) {
+  if (bucket.count >= max) {
     return {
       allowed: false,
       retryAfterSeconds: Math.max(1, Math.ceil((bucket.windowStart + WINDOW_MS - now) / 1000)),
@@ -49,6 +59,29 @@ export function checkRateLimit(key: string, now: number = Date.now()): RateLimit
 
   bucket.count += 1;
   return { allowed: true, retryAfterSeconds: 0 };
+}
+
+export function checkRateLimit(key: string, now: number = Date.now()): RateLimitResult {
+  return consume(key, MAX_PER_IDENTITY, now);
+}
+
+/**
+ * Stacked guard for mutating endpoints: consumes both the identity bucket
+ * and the IP bucket. A denial from either denies the request (already-
+ * consumed counts on the other bucket are fine — denied attempts counting
+ * toward the limit is desirable for an abuse guard).
+ */
+export function checkMutationRateLimit(ip: string, bidderId: string): RateLimitResult {
+  const now = Date.now();
+  sweep(now);
+
+  const identity = consume(`${ip}:${bidderId}`, MAX_PER_IDENTITY, now);
+  if (!identity.allowed) return identity;
+
+  const perIp = consume(`ip:${ip}`, MAX_PER_IP, now);
+  if (!perIp.allowed) return perIp;
+
+  return identity;
 }
 
 export function clientIp(request: Request): string {

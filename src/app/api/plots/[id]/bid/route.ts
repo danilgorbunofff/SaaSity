@@ -7,7 +7,7 @@
 
 import { prisma } from '@/server/prisma';
 import { getOrCreateBidderPayload } from '@/server/bidder-cookie';
-import { checkRateLimit, clientIp } from '@/server/rate-limit';
+import { checkMutationRateLimit, clientIp } from '@/server/rate-limit';
 import {
   lockPlot,
   upsertPreBid,
@@ -33,7 +33,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const bidder = await getOrCreateBidderPayload();
 
-  const limit = checkRateLimit(`${clientIp(request)}:${bidder.bidderId}`);
+  const limit = checkMutationRateLimit(clientIp(request), bidder.bidderId);
   if (!limit.allowed) {
     return errorJson(429, 'Too many requests', { retryAfterSeconds: limit.retryAfterSeconds });
   }
