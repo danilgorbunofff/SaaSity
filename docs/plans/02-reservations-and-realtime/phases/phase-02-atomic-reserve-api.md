@@ -1,7 +1,7 @@
 # Phase 2.2 — Claim, Bid & Proxy Engine API
 
 **Milestone:** [2 · Auctions & Realtime](../PLAN.md) · **Prev:** [2.1 Bid & Pre-Bid Form](phase-01-claim-form-validation.md) · **Next:** [2.3 Cycle Resolution Worker](phase-03-expiry-sweep.md)
-**Status:** ⚪ Not started · **Estimate:** ~2.5 days
+**Status:** ✅ Complete · **Estimate:** ~2.5 days
 
 ## Goal
 
@@ -53,10 +53,10 @@ One race-safe engine — backing three endpoints (instant claim, manual bid, pro
 
 ## Exit criteria
 
-- [ ] No interleaving of reads/writes can double-claim an `IDLE` plot or corrupt a cycle's leader/price under concurrent load
-- [ ] `resolveCycle` is the single implementation used by claim, bid, and 2.3's rotation — no duplicated resolution logic anywhere
-- [ ] Soft-close extension is reset-based, capped, and never double-applied when one request triggers multiple `Bid` rows
-- [ ] Bidder cookie reused (never re-minted) from 0.2 across all three endpoints
+- [x] No interleaving of reads/writes can double-claim an `IDLE` plot or corrupt a cycle's leader/price under concurrent load
+- [x] `resolveCycle` is the single implementation used by claim, bid, and 2.3's rotation — no duplicated resolution logic anywhere
+- [x] Soft-close extension is reset-based, capped, and never double-applied when one request triggers multiple `Bid` rows
+- [x] Bidder cookie reused (never re-minted) from 0.2 across all three endpoints
 
 ## Out of scope / notes
 

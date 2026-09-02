@@ -67,6 +67,9 @@ async function main() {
           bidderId: STRESS_BIDDER_ID,
           maxBidCents: currentPrice * 3,
           status: 'ACTIVE',
+          companyName: 'StressCo',
+          targetUrl: 'https://stress.example.com',
+          twitterHandle: 'stressco',
         },
       });
       leaderPreBidId = pb.id;

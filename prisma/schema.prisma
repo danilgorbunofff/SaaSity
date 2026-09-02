@@ -142,6 +142,15 @@ model PreBid {
   // PRIVATE — never serialized into any public payload.
   maxBidCents Int
 
+  // Public brand submitted with the bid (mirrors the shared 2.1 form
+  // contract). Projected onto Plot's leader* display cache whenever this
+  // PreBid leads its cycle. Only maxBidCents is private — the brand is not.
+  companyName   String
+  tagline       String?
+  targetUrl     String
+  twitterHandle String
+  mrrText       String?
+
   status PreBidStatus @default(ACTIVE)
 
   createdAt DateTime @default(now())
@@ -167,6 +176,9 @@ model Bid {
   bidderId    String
   amountCents Int
   isProxy     Boolean      @default(false)
+  // True when this tick is the one that triggered a soft-close extension
+  // (audit trail so an extension can never be double-attributed).
+  triggeredExtension Boolean @default(false)
 
   createdAt DateTime @default(now())
 

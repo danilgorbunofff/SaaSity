@@ -1,0 +1,100 @@
+/**
+ * Phase 2.2 — POST /api/plots/[id]/claim
+ * Open an auction cycle on an IDLE plot: claimer's pre-bid at >= tier floor,
+ * queued next-cycle pre-bids attach, resolution runs once. 200 | 404 | 409.
+ */
+
+import { prisma } from '@/server/prisma';
+import { getOrCreateBidderPayload } from '@/server/bidder-cookie';
+import { checkRateLimit, clientIp } from '@/server/rate-limit';
+import { TIERS } from '@/lib/tiers';
+import {
+  lockPlot,
+  startCycle,
+  attachQueuedPreBids,
+  upsertPreBid,
+  resolveCycle,
+} from '@/server/auction/engine';
+import { parseBody, isSameOrigin, errorJson } from '@/server/auction/http';
+
+export const dynamic = 'force-dynamic';
+
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  if (!isSameOrigin(request)) {
+    return errorJson(403, 'Cross-origin requests are not allowed');
+  }
+
+  const { id } = await params;
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return errorJson(400, 'Malformed JSON body');
+  }
+
+  const bidder = await getOrCreateBidderPayload();
+
+  const limit = checkRateLimit(`${clientIp(request)}:${bidder.bidderId}`);
+  if (!limit.allowed) {
+    return errorJson(429, 'Too many requests', { retryAfterSeconds: limit.retryAfterSeconds });
+  }
+
+  // Plot must exist; tier needed for the shared-contract floor check.
+  const plot = await prisma.plot.findUnique({
+    where: { id },
+    select: { id: true, tier: true, status: true },
+  });
+  if (!plot) return errorJson(404, 'Plot not found');
+
+  const parsed = parseBody(body, { mode: 'claim', tier: plot.tier });
+  if (!parsed.ok) return parsed.response;
+
+  const { maxBidCents, companyName, tagline, targetUrl, twitterHandle, mrrText } = parsed.values;
+  const floor = TIERS[plot.tier].floorCents;
+
+  const result = await prisma.$transaction(async (tx) => {
+    await lockPlot(tx, id);
+
+    const claim = await startCycle(tx, plot, new Date());
+    if (!claim) {
+      return { conflict: true as const };
+    }
+
+    // Claimer's pre-bid lands directly in the fresh cycle.
+    const preBidId = await upsertPreBid(tx, {
+      plotId: id,
+      cycleId: claim.id,
+      bidderId: bidder.bidderId,
+      maxBidCents,
+      brand: { companyName, tagline, targetUrl, twitterHandle, mrrText },
+    });
+
+    // Queued next-cycle pre-bids (placed while the plot was IDLE) attach.
+    await attachQueuedPreBids(tx, id, claim.id);
+
+    const resolution = await resolveCycle(tx, claim, { humanSubmitCents: maxBidCents });
+
+    return {
+      conflict: false as const,
+      cycleId: claim.id,
+      preBidId,
+      endAt: claim.endAt.toISOString(),
+      priceCents: resolution?.priceCents ?? floor,
+      isLeader: resolution?.leaderBidderId === bidder.bidderId,
+    };
+  });
+
+  if (result.conflict) {
+    return errorJson(409, 'Plot already has an active auction', { plotId: id });
+  }
+
+  return Response.json({
+    ok: true,
+    plotId: id,
+    cycleId: result.cycleId,
+    endAt: result.endAt,
+    currentPriceCents: result.priceCents,
+    youAreLeader: result.isLeader,
+    minimumNextBidCents: result.priceCents + TIERS[plot.tier].incrementCents,
+  });
+}
