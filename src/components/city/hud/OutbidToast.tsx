@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useCityStore } from '@/lib/city/store';
 import { sectorLabel } from '@/lib/city/hud-hooks';
 import { flyToPlot } from '@/lib/city/camera-rig';
+import { useBidFormStore } from '@/lib/bid/bid-form-store';
 import { formatPrice } from '@/lib/tiers';
 import { tierIncrementCents } from '@/components/city/PlotSkins';
 
@@ -85,6 +86,8 @@ export function OutbidToast() {
               onClick={() => {
                 dismiss(toast.id);
                 flyToPlot(plot.id);
+                // 2.1: the toast's click now opens the real bid form.
+                useBidFormStore.getState().openBidForm(plot.id, 'bid');
               }}
               className="rounded border border-[#ffb400]/70 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-[#ffb400] hover:bg-[#ffb400]/10"
             >

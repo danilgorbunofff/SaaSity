@@ -7,6 +7,7 @@
  */
 
 import { useCityStore, isOwnedLeading } from '@/lib/city/store';
+import { useBidFormStore } from '@/lib/bid/bid-form-store';
 import { useHudTick, hudNowMs, formatHudCountdown, sectorLabel } from '@/lib/city/hud-hooks';
 import { flyToPlot } from '@/lib/city/camera-rig';
 import { formatPrice, TIERS } from '@/lib/tiers';
@@ -73,6 +74,7 @@ export function DetailCard() {
   const myPreBidIds = useCityStore((s) => s.myPreBidIds);
   const outbidPlotIds = useCityStore((s) => s.outbidPlotIds);
   const setSelectedPlotId = useCityStore((s) => s.setSelectedPlotId);
+  const openBidForm = useBidFormStore((s) => s.openBidForm);
 
   if (!selectedPlotId || !plot) return null;
   const owned = isOwnedLeading(plot, myPreBidIds, plot.currentLeaderPreBidId);
@@ -104,22 +106,34 @@ export function DetailCard() {
               </div>
               <button
                 type="button"
-                onClick={() => flyToPlot(plot.id)}
-                title="Jump to the plot and re-take the lead (bid form lands in phase 2)"
+                onClick={() => {
+                  flyToPlot(plot.id);
+                  openBidForm(plot.id, 'bid');
+                }}
+                title="Fly to the plot and re-take the lead"
                 className="mt-2 w-full rounded border border-[#ffb400]/70 bg-[#ffb400]/10 px-3 py-2 text-[12px] font-semibold uppercase tracking-wider text-[#ffb400] hover:bg-[#ffb400]/20"
               >
                 Jump &amp; outbid
               </button>
             </div>
           ) : (
-            <button
-              type="button"
-              disabled
-              title="Bidding opens soon"
-              className="mt-4 w-full cursor-not-allowed rounded border border-[#2a3a46] bg-[#0b0e14] px-3 py-2 text-[12px] font-semibold uppercase tracking-wider text-[#6b7a8c]"
-            >
-              Place a bid
-            </button>
+            <div className="mt-4 space-y-2">
+              <button
+                type="button"
+                onClick={() => openBidForm(plot.id, 'bid')}
+                className="w-full rounded border border-[#00f0ff]/60 bg-[#00f0ff]/15 px-3 py-2 text-[12px] font-bold uppercase tracking-wider text-[#00f0ff] hover:bg-[#00f0ff]/25"
+              >
+                Place a bid
+              </button>
+              <button
+                type="button"
+                onClick={() => openBidForm(plot.id, 'prebid')}
+                title="Queue a proxy bid for the NEXT cycle — the system bids for you up to your max"
+                className="w-full rounded border border-[#12303a] bg-[#0b0e14] px-3 py-2 text-[12px] font-semibold uppercase tracking-wider text-[#9fd8e6] hover:border-[#00f0ff]/40"
+              >
+                Schedule pre-bid →
+              </button>
+            </div>
           )}
         </div>
       ) : (
@@ -130,9 +144,8 @@ export function DetailCard() {
           <div className="mt-1 text-[12px] text-[#6b7a8c]">floor price — idle slot</div>
           <button
             type="button"
-            disabled
-            title="Bidding opens soon"
-            className="mt-4 w-full cursor-not-allowed rounded border border-[#2a3a46] bg-[#0b0e14] px-3 py-2 text-[12px] font-semibold uppercase tracking-wider text-[#6b7a8c]"
+            onClick={() => openBidForm(plot.id, 'claim')}
+            className="mt-4 w-full rounded border border-[#00f0ff]/60 bg-[#00f0ff]/15 px-3 py-2 text-[12px] font-bold uppercase tracking-wider text-[#00f0ff] hover:bg-[#00f0ff]/25"
           >
             Claim this plot
           </button>

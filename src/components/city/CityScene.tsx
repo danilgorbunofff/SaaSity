@@ -24,6 +24,7 @@ import { plinthY } from '@/lib/city/grid-to-world';
 import { PlotSkins } from './PlotSkins';
 import { TopStrip } from './hud/TopStrip';
 import { DetailCard } from './hud/DetailCard';
+import { BidModal } from './hud/BidModal';
 import { MyLeasesPill } from './hud/MyLeasesPill';
 import { Minimap } from './hud/Minimap';
 import { OutbidToast } from './hud/OutbidToast';
@@ -164,8 +165,6 @@ function ErrorChip() {  const error = useCityStore((s) => s.error);
     </Html>
   );
 }
-
-'use client';
 
 /**
  * Live-data plot grid over the static seed layout. Before the first
@@ -321,6 +320,7 @@ export function CityScene() {
       <Minimap />
       <OutbidToast />
       <PlotA11yList />
+      <BidModal />
     </div>
   );
 }

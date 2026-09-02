@@ -1,7 +1,7 @@
 # Phase 2.1 — Bid & Pre-Bid Form Validation
 
 **Milestone:** [2 · Auctions & Realtime](../PLAN.md) · **Prev:** [Milestone 1](../../01-3d-city/PLAN.md) · **Next:** [2.2 Claim, Bid & Proxy Engine API](phase-02-atomic-reserve-api.md)
-**Status:** ⚪ Not started · **Estimate:** ~1.5 days
+**Status:** ✅ Done · **Estimate:** ~1.5 days
 
 ## Goal
 
@@ -31,12 +31,15 @@ One shared form — claim, manual bid, or proxy pre-bid; same field contract, di
 ## Verification
 
 - Form validation table tested manually: valid, each-field-invalid, hostile URLs (`javascript:`, data URIs), and each of the three modes' contextual minimum-amount copy
+- Unit: 13 tests in `tests/validation/bid-form.test.ts` (modes, minimums, hostile URLs, normalization, multi-error reporting) — 29/29 suite green
+- Endpoint: `POST /api/mock/bids` exercised live — 200 ok, 422 fieldErrors, 422 below-minimum ("Must be at least $6.00"), 409 outbid, 400 simulated failure
+- Browser: headless-CDP smoke — minimap/a11y select → detail card → claim modal → fill → success view; OUTBIDSIM → outbid view. 5/5 PASS
 
 ## Exit criteria
 
-- [ ] One shared schema validates identically client and server across all three modes
-- [ ] Modal flow works with a mocked submit endpoint
-- [ ] All five brand fields plus `maxBidCents` captured exactly as M3's pre-auth will need them
+- [x] One shared schema validates identically client and server across all three modes (`src/lib/validation/bid-form.ts` imported by `BidModal` and `api/mock/bids`)
+- [x] Modal flow works with a mocked submit endpoint (browser smoke verified end-to-end)
+- [x] All five brand fields plus `maxBidCents` captured exactly as M3's pre-auth will need them (`plotId, companyName, tagline?, targetUrl, twitterHandle, mrrText?, maxBidCents`)
 
 ## Out of scope / notes
 
