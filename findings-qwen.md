@@ -11,11 +11,11 @@
 
 `.github/workflows/ci.yml` is the advertised "required check" gate (Part 2 GATE-07, Part 7). Reality:
 
-| Run | Commit | Result |
-|---|---|---|
+| Run         | Commit           | Result      |
+| ----------- | ---------------- | ----------- |
 | 33756066788 | `a969e0a` (HEAD) | fail, 5m36s |
-| 33732315344 | `dc8b453` | fail, 34s |
-| 33718282864 | `a04c9b5` | fail, 34s |
+| 33732315344 | `dc8b453`        | fail, 34s   |
+| 33718282864 | `a04c9b5`        | fail, 34s   |
 
 These are the only three CI push runs that have ever existed. All three die at the same step, "Install dependencies":
 
@@ -169,15 +169,15 @@ Unticked boxes per doc: P1: 1, P2: 5, P3: 0, P4: 25, P5: 9, P6: 12, P7: 20.
 
 ## Verdicts
 
-| Part | Verdict | Score |
-|---|---|---|
-| 1 Lifecycle | **PASS** | 90% |
-| 2 Foundation/Delivery | **FAIL** | 55% |
-| 3 Engine/Worker/Payments | **PASS** | 95% |
-| 4 Realtime | **PASS** | 85% |
-| 5 3D City | **PASS** | 85% |
-| 6 UI/UX/A11y | **PASS** | 80% |
-| 7 Testing/Docs | **PASS** (conditional) | 70% |
+| Part                     | Verdict                | Score |
+| ------------------------ | ---------------------- | ----- |
+| 1 Lifecycle              | **PASS**               | 90%   |
+| 2 Foundation/Delivery    | **FAIL**               | 55%   |
+| 3 Engine/Worker/Payments | **PASS**               | 95%   |
+| 4 Realtime               | **PASS**               | 85%   |
+| 5 3D City                | **PASS**               | 85%   |
+| 6 UI/UX/A11y             | **PASS**               | 80%   |
+| 7 Testing/Docs           | **PASS** (conditional) | 70%   |
 
 ## FIX-FIRST list (ordered by risk)
 

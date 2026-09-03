@@ -1,6 +1,6 @@
 name: CI
 
-# Required-checks pipeline for main and every pull request targeting it
+# Required-checks pipeline for every push and every pull request targeting main
 # (Part 2 remediation: missing-prisma-generate #5, untracked-migrations #6,
 # delivery-pipeline-unproven #1/#5). This is the "intended CI system" — branch
 # protection on `main` still needs to be turned on in the repo settings (not
@@ -8,7 +8,6 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
     branches: [main]
 
@@ -80,6 +79,12 @@ jobs:
 
       - name: Seed
         run: npm run db:seed
+
+      # Next 16 typed routes declare LayoutProps etc. only in generated
+      # .next/types (gitignored) — tsc on a fresh checkout fails TS2304
+      # without this step; `next build` also generates them but runs last.
+      - name: Next typegen
+        run: npx next typegen
 
       - name: Typecheck
         run: npx tsc --noEmit

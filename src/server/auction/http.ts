@@ -2,7 +2,12 @@
 
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { validateBidForm, type BidMode, type FieldErrors } from '@/lib/validation/bid-form';
+import {
+  MAX_BID_CENTS,
+  validateBidForm,
+  type BidMode,
+  type FieldErrors,
+} from '@/lib/validation/bid-form';
 import type { PlotTier } from '@/lib/tiers';
 
 /**
@@ -18,7 +23,7 @@ export const auctionBodySchema = z.object({
   targetUrl: z.string().trim().min(1).max(2000),
   twitterHandle: z.string().trim().min(1).max(32),
   mrrText: z.string().trim().max(20).optional(),
-  maxBidCents: z.number().int().positive(),
+  maxBidCents: z.number().int().positive().max(MAX_BID_CENTS),
 });
 
 export type AuctionBody = z.infer<typeof auctionBodySchema>;

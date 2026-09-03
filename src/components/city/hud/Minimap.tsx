@@ -147,7 +147,7 @@ export function Minimap() {
     <div
       data-testid="hud-minimap"
       role="group"
-      className="absolute bottom-3 right-3 z-20 max-w-[calc(100vw-1.5rem)] rounded-lg border border-[#12303a] bg-[#050508]/90 p-2 backdrop-blur-sm"
+      className="absolute bottom-[max(0.75rem,env(safe-area-inset-bottom))] right-3 z-20 max-w-[calc(100vw-1.5rem)] rounded-lg border border-[#12303a] bg-[#050508]/90 p-2 backdrop-blur-sm"
       aria-label="City minimap"
     >
       <div className="flex items-center justify-between gap-2">

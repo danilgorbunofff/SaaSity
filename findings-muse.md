@@ -18,6 +18,7 @@ So the Part 7 claim "`npx tsc --noEmit` clean" is **false** on this commit.
 ## BLOCKER 1 — `bid:placed` emits the wrong leader when the caller doesn't take the lead
 
 Files:
+
 - `src/app/api/plots/[id]/bid/route.ts:205-212`
 - `src/app/api/plots/[id]/claim/route.ts:180-187`
 
@@ -57,14 +58,16 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
 ## MAJOR 1 — no server-side max-bid cap (shared-contract violation)
 
 Files:
+
 - `src/server/auction/http.ts:21` (`auctionBodySchema`: `maxBidCents: z.number().int().positive()` — no max)
 - `src/lib/validation/bid-form.ts:61` (`bidFormSchema`: same, no max)
 
-Spec (Part 6): the bid contract runs **identically** client and server. `MAX_BID_CENTS` ($100k) exists only in the client's `parseDollarsToCents`. A curl with `$1B` sails through structural validation; contextual minimums only check the floor, never the ceiling. Consequences: absurd holds, Postgres-int overflow → 500 on write. Fix: enforce `MAX_BID_CENTS` in both zod schemas (or in `validateBidForm`, which the server already calls).
+Spec (Part 6): the bid contract runs **identically** client and server. `MAX_BID_CENTS` ($100k) exists only in the client's `parseDollarsToCents`. A curl with `$1B`sails through structural validation; contextual minimums only check the floor, never the ceiling. Consequences: absurd holds, Postgres-int overflow → 500 on write. Fix: enforce`MAX_BID_CENTS`in both zod schemas (or in`validateBidForm`, which the server already calls).
 
 ## MAJOR 2 — outbox persist failure is silent; "snapshot + seq-gap refetch" does not recover it
 
 Files:
+
 - `src/server/realtime/outbox.ts:48-55` (fire-and-forget `sink`: log + drop)
 - `src/app/api/events/route.ts:55,111` (`seq` is per-connection, not global outbox seq)
 
@@ -73,6 +76,7 @@ The module doc is honest that the cross-instance copy is lost, then claims "the 
 ## MAJOR 3 — reduced-motion gaps in HUD
 
 Files:
+
 - `src/components/city/hud/DetailCard.tsx:189` (outbid banner: `animate-[city-outbid-flash...]` unconditional)
 - `src/components/city/hud/TopStrip.tsx:78-81,111` (`animate-pulse` on connecting/reconnecting dot, unconditional)
 
@@ -80,7 +84,7 @@ Part 5 contract: CSS keyframe flashes are **not applied** under `prefers-reduced
 
 ## MAJOR 4 — `PreBidStatus.CANCELLED` is unreachable
 
-File: `prisma/schema.prisma` (enum value); zero writers anywhere under `src/server/auction/` (verified by search — only `CANCELLED` for *cycles*, `EXPIRED`/`LOST`/`WON` for pre-bids). If Part 1 claims every lifecycle state is reachable, that checkbox is false. At minimum a dead enum variant that will confuse the next reader; either wire it (e.g. shell-cancelled rows) or remove it.
+File: `prisma/schema.prisma` (enum value); zero writers anywhere under `src/server/auction/` (verified by search — only `CANCELLED` for _cycles_, `EXPIRED`/`LOST`/`WON` for pre-bids). If Part 1 claims every lifecycle state is reachable, that checkbox is false. At minimum a dead enum variant that will confuse the next reader; either wire it (e.g. shell-cancelled rows) or remove it.
 
 ---
 
@@ -116,15 +120,15 @@ File: `.github/workflows/ci.yml:10-13` (`push: branches: [main]`, `pull_request`
 
 ## VERDICTS
 
-| Part | Result | Note |
-|------|--------|------|
-| 1 Lifecycle | **FAIL ~80%** | machine + privacy sound; B1 corrupts live leader, M4 dead state |
-| 2 Foundation | **PASS ~90%** | CI/drift/migrate/seed/serializers real; minus CI trigger scope |
-| 3 Engine/worker/payments | **PASS ~85%** | locks, rechecks, cascade, reconcile correct; minus M1 cap |
-| 4 Realtime | **FAIL ~70%** | transport + reconstruction genuine; B1 + M2 break headline claims |
-| 5 3D city | **PASS ~85%** | perf + selection + motion infra; minus M3 guards |
-| 6 UI/UX/a11y | **PASS ~80%** | landmarks, focus, validation, retry real; minus Escape/focus/cap parity |
-| 7 Testing/docs | **FAIL ~65%** | 138/138 + lint + format verified; **tsc claim false**; integration/preview honestly pending |
+| Part                     | Result        | Note                                                                                        |
+| ------------------------ | ------------- | ------------------------------------------------------------------------------------------- |
+| 1 Lifecycle              | **FAIL ~80%** | machine + privacy sound; B1 corrupts live leader, M4 dead state                             |
+| 2 Foundation             | **PASS ~90%** | CI/drift/migrate/seed/serializers real; minus CI trigger scope                              |
+| 3 Engine/worker/payments | **PASS ~85%** | locks, rechecks, cascade, reconcile correct; minus M1 cap                                   |
+| 4 Realtime               | **FAIL ~70%** | transport + reconstruction genuine; B1 + M2 break headline claims                           |
+| 5 3D city                | **PASS ~85%** | perf + selection + motion infra; minus M3 guards                                            |
+| 6 UI/UX/a11y             | **PASS ~80%** | landmarks, focus, validation, retry real; minus Escape/focus/cap parity                     |
+| 7 Testing/docs           | **FAIL ~65%** | 138/138 + lint + format verified; **tsc claim false**; integration/preview honestly pending |
 
 ## Overall: FIX-FIRST, ordered by risk
 

@@ -21,6 +21,7 @@ import { useBidFormStore } from '@/lib/bid/bid-form-store';
 import { loadBrand } from '@/lib/bid/brand-memory';
 import { useHudTick, hudNowMs, formatHudCountdown, sectorLabel } from '@/lib/city/hud-hooks';
 import { flyToPlot } from '@/lib/city/camera-rig';
+import { useReducedMotion } from '@/lib/city/reduced-motion';
 import { formatPrice, TIERS, formatMrrBadge } from '@/lib/tiers';
 import { tierIncrementCents } from '@/components/city/PlotSkins';
 import type { PlotDto } from '@/types/api';
@@ -146,6 +147,7 @@ export function DetailCard() {
   const setSelectedPlotId = useCityStore((s) => s.setSelectedPlotId);
   const mockResolveEnabled = useCityStore((s) => s.mockResolveEnabled);
   const openBidForm = useBidFormStore((s) => s.openBidForm);
+  const reduceMotion = useReducedMotion();
 
   if (!selectedPlotId || !plot) return null;
   const owned = isOwnedLeading(plot, myPreBidIds, plot.currentLeaderPreBidId);
@@ -186,7 +188,9 @@ export function DetailCard() {
             </button>
           ) : outbid ? (
             <div className="mt-4">
-              <div className="rounded border border-[#ffb400]/60 bg-[#ffb400]/10 px-3 py-2 font-mono text-[12px] font-bold uppercase tracking-wider text-[#ffb400] animate-[city-outbid-flash_0.8s_ease-in-out_infinite]">
+              <div
+                className={`rounded border border-[#ffb400]/60 bg-[#ffb400]/10 px-3 py-2 font-mono text-[12px] font-bold uppercase tracking-wider text-[#ffb400]${reduceMotion ? '' : ' animate-[city-outbid-flash_0.8s_ease-in-out_infinite]'}`}
+              >
                 ⚠️ Outbid: +{formatPrice(tierIncrementCents(plot.tier))} to retain
               </div>
               <button

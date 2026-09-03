@@ -13,8 +13,12 @@
  *     order; the poll loop reads strictly newer-than-cursor, ascending.
  *   - retry: the sink is fire-and-forget — a failed persist is logged, never
  *     thrown (it must not break the request path). The local loop already
- *     delivered same-process clients; cross-instance delivery of THAT event
- *     is lost, which the SSE snapshot + seq-gap refetch recovers from.
+ *     delivered same-process clients; the cross-instance copy of THAT event
+ *     is lost. It is NOT recovered by the SSE snapshot + seq-gap refetch:
+ *     a lost row produces no gap on any other instance's stream (each
+ *     connection numbers its own frames from its own cursor), so live
+ *     clients there only converge on the next reconnect / visibility /
+ *     focus resync. Known loss window, accepted by design.
  *   - dedup: consumers key off `eventKeyOf` (see bus.ts); local + outbox
  *     copies of one logical occurrence share the key.
  *   - retention: `pruneOutbox` drops rows older than OUTBOX_RETENTION_HOURS;

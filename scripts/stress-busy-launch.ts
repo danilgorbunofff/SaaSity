@@ -90,7 +90,7 @@ async function main() {
   const keepIds = new Set(chosen.map((c) => c.id));
   await prisma.preBid.updateMany({
     where: { bidderId: STRESS_BIDDER_ID, status: 'ACTIVE', plotId: { notIn: [...keepIds] } },
-    data: { status: 'CANCELLED' },
+    data: { status: 'EXPIRED', lostReason: 'expired' },
   });
 
   const counts = await prisma.plot.groupBy({ by: ['status'], _count: true });

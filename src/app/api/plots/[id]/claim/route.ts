@@ -98,12 +98,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // queued for the next rotation instead of entering unauthorized.
     await attachPreBidsToCycle(tx, queuedAuth.authorizedIds, claim.id);
 
-    const resolution = await resolveCycle(tx, claim, { humanSubmitCents: maxBidCents });
+    const resolution = await resolveCycle(tx, claim, {
+      humanSubmitCents: maxBidCents,
+      humanIds: { preBidId, bidderId: bidder.bidderId },
+    });
 
     return {
       conflict: false as const,
       cycleId: claim.id,
       preBidId,
+      leaderPreBidId: resolution?.leaderPreBidId ?? preBidId,
       endAt: claim.endAt.toISOString(),
       priceCents: resolution?.priceCents ?? floor,
       isLeader: resolution?.leaderBidderId === bidder.bidderId,
@@ -181,7 +185,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     plotId: id,
     cycleId: result.cycleId,
     currentPriceCents: result.priceCents,
-    leaderPreBidId: result.preBidId,
+    leaderPreBidId: result.leaderPreBidId,
     isProxy: !result.isLeader,
     endAt: result.endAt,
   });
