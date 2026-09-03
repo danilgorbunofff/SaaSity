@@ -14,7 +14,7 @@ required implementation and its acceptance evidence both exist.
 | --- | --- | --- | ---: | --- |
 | 1 | [Product lifecycle](part-01-product-lifecycle.md) | Define what is auctioned, when a lease begins, and who is displayed | 1 | ✅ Implemented + validated + committed (`e0ad13c`) |
 | 2 | [Foundation, delivery, and data](part-02-foundation-delivery-data.md) | Clean-clone setup, migrations, deployment, identity constraints | 7 | ✅ Mostly resolved + committed (`b259010`) — 2 items honestly partial, see doc |
-| 3 | [Auction engine, worker, and payments](part-03-auction-engine-worker-payments.md) | Race safety, proxy rules, soft-close, settlement, scheduling | 8 | Open |
+| 3 | [Auction engine, worker, and payments](part-03-auction-engine-worker-payments.md) | Race safety, proxy rules, soft-close, settlement, scheduling | 8 | ✅ Implemented + validated + committed (`76f82ea`) |
 | 4 | [Realtime and client state](part-04-realtime-client-state.md) | Deploy-safe fan-out, SSE lifecycle, ownership/outbid synchronization | 6 | Open (`public-bidder-id` addressed as part of Part 1's SSE payload fix) |
 | 5 | [3D city and performance](part-05-3d-city-performance.md) | OUTER regression, selection, motion, mobile performance | 5 | Open |
 | 6 | [UI, UX, and accessibility](part-06-ui-ux-accessibility.md) | Bid flow, responsive HUD, accessibility, onboarding, interaction | 12 | Open |
