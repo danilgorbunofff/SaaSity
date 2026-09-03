@@ -115,6 +115,15 @@ interface ResolveOptions {
    * proxy tick. Undefined (pre-bid attach) always records proxy.
    */
   humanSubmitCents?: number;
+  /**
+   * When the triggering request extended the soft-close window
+   * (applySoftClose returned extended=true), the single ledger row this
+   * call writes is marked triggeredExtension=true, identifying the row that
+   * represents the triggering request. Carries the requester's own
+   * pre-bid/bidder ids for the orphan case below. Absent on proxy passes
+   * (worker, claim), so generated proxy ticks always stay false.
+   */
+  triggeredExtension?: { preBidId: string; bidderId: string };
 }
 
 /**
@@ -124,6 +133,10 @@ interface ResolveOptions {
  * caller IS the new leader at exactly their submitted max), the cycle's
  * currentPriceCents, and Plot.currentLeaderPreBidId (auction progress only
  * — never a brand; see activateTenant for the publicly-displayed tenant).
+ * When the caller passes triggeredExtension (its request extended the
+ * soft-close window), the written row — or a requester-attributed tick at
+ * the standing price when nothing moved — carries triggeredExtension=true,
+ * so every extension is attributable to exactly one ledger row.
  * Safe to call repeatedly, including for a brand-new cycle, without ever
  * disturbing whatever tenant is currently displayed on the plot.
  *
@@ -168,6 +181,7 @@ export async function resolveCycle(
         bidderId: resolution.leaderBidderId,
         amountCents: resolution.priceCents,
         isProxy: !plotIsLeader,
+        triggeredExtension: options.triggeredExtension !== undefined,
       },
     });
   }
@@ -191,6 +205,24 @@ export async function resolveCycle(
           bidderId: resolution.leaderBidderId,
           amountCents: resolution.priceCents,
           isProxy: true,
+          triggeredExtension: options.triggeredExtension !== undefined,
+        },
+      });
+    } else if (options.triggeredExtension) {
+      // The request extended the window but moved neither price nor
+      // leadership (e.g. the leader raised a max the price was already
+      // capped below): without this branch the extension would be
+      // unattributable. Record the requester's own tick at the standing
+      // price so exactly one row still represents the triggering request.
+      await tx.bid.create({
+        data: {
+          cycleId: cycle.id,
+          plotId: cycle.plotId,
+          preBidId: options.triggeredExtension.preBidId,
+          bidderId: options.triggeredExtension.bidderId,
+          amountCents: cycle.currentPriceCents,
+          isProxy: false,
+          triggeredExtension: true,
         },
       });
     }
@@ -321,10 +353,14 @@ export async function upsertPreBid(
   });
 
   if (queued) {
+    // Upward-only: attaching a queued row into a cycle (claim path) or
+    // re-stating it (pre-bid path) must never lower the existing commitment
+    // — a stale tab submitting a lower max keeps the higher standing max,
+    // while the row still attaches to its target cycle.
     await tx.preBid.update({
       where: { id: queued.id },
       data: {
-        maxBidCents: args.maxBidCents,
+        maxBidCents: Math.max(queued.maxBidCents, args.maxBidCents),
         cycleId: args.cycleId,
         companyName: args.brand.companyName,
         tagline: args.brand.tagline ?? null,
@@ -393,14 +429,26 @@ export async function startCycle(
 }
 
 /**
- * Attach queued (cycleId = null) pre-bids to a freshly created cycle.
+ * Attach pre-authorized pre-bids to a freshly created cycle (Part 3
+ * authorization seam). Takes EXPLICIT ids — the survivors of
+ * `authorizeAttachedRows` — never "every queued row": a row that arrives
+ * between authorization and this tx stays queued for the NEXT rotation
+ * instead of entering a cycle unauthorized. The update is additionally
+ * guarded to null -> cycleId ACTIVE rows, so an already-attached,
+ * settled, or expired row can never be moved.
  * Caller must hold lockPlot; run inside its transaction.
  */
-export async function attachQueuedPreBids(tx: Tx, plotId: string, cycleId: string): Promise<void> {
-  await tx.preBid.updateMany({
-    where: { plotId, cycleId: null, status: 'ACTIVE' },
+export async function attachPreBidsToCycle(
+  tx: Tx,
+  preBidIds: string[],
+  cycleId: string,
+): Promise<number> {
+  if (preBidIds.length === 0) return 0;
+  const attached = await tx.preBid.updateMany({
+    where: { id: { in: preBidIds }, cycleId: null, status: 'ACTIVE' },
     data: { cycleId },
   });
+  return attached.count;
 }
 
 export interface SoftCloseResult {
@@ -411,40 +459,48 @@ export interface SoftCloseResult {
 /**
  * Reset-based soft-close: when a bid lands inside the final
  * SOFT_CLOSE_MINUTES window, endAt is pushed to receivedAt +
- * SOFT_CLOSE_MINUTES (max with current endAt), capped at
- * SOFT_CLOSE_CAP_MINUTES of total extensions per cycle.
- * Caller must hold lockPlot; run inside its transaction.
+ * SOFT_CLOSE_MINUTES (max with current endAt), capped so total extensions
+ * never exceed SOFT_CLOSE_CAP_MINUTES past the cycle's ORIGINAL end
+ * (startedAt + durationMinutes). The spent budget is derived from endAt
+ * itself — actual milliseconds granted, not coarse minute units — so a
+ * 10-second push spends 10 seconds of budget. Caller must hold lockPlot;
+ * run inside its transaction.
+ *
+ * Idempotent per request timestamp: calling twice with the same receivedAt
+ * extends at most once (the second call sees endAt already >=
+ * receivedAt + window), so one request can attribute at most one extension
+ * no matter how the call sites evolve.
  */
 export async function applySoftClose(
   tx: Tx,
-  cycle: Pick<AuctionCycle, 'id' | 'endAt' | 'softCloseExtensions'>,
+  cycle: Pick<AuctionCycle, 'id' | 'endAt' | 'startedAt' | 'durationMinutes' | 'softCloseExtensions'>,
   receivedAt: Date,
 ): Promise<SoftCloseResult> {
   const windowMs = SOFT_CLOSE_MINUTES * 60 * 1000;
   const remaining = cycle.endAt.getTime() - receivedAt.getTime();
 
-  if (remaining > windowMs) return { extended: false, newEndAt: cycle.endAt };
-
-  const extensionBudgetLeft =
-    (SOFT_CLOSE_CAP_MINUTES - cycle.softCloseExtensions) * 60 * 1000;
-  if (extensionBudgetLeft <= 0) {
+  if (remaining <= 0 || remaining > windowMs) {
     return { extended: false, newEndAt: cycle.endAt };
   }
 
-  const pushMs = Math.min(windowMs, extensionBudgetLeft);
-  const newEndAt = new Date(Math.max(cycle.endAt.getTime(), receivedAt.getTime() + pushMs));
+  const originalEndMs = cycle.startedAt.getTime() + cycle.durationMinutes * 60_000;
+  const hardCapMs = originalEndMs + SOFT_CLOSE_CAP_MINUTES * 60_000;
+  const candidateMs = Math.max(cycle.endAt.getTime(), receivedAt.getTime() + windowMs);
+  const newEndMs = Math.min(candidateMs, hardCapMs);
 
-  // A partial grant may be smaller than the time already left — then nothing
-  // moves and no budget is consumed.
-  if (newEndAt.getTime() <= cycle.endAt.getTime()) {
+  // A cap-truncated (or zero) push that moves nothing grants nothing.
+  if (newEndMs <= cycle.endAt.getTime()) {
     return { extended: false, newEndAt: cycle.endAt };
   }
 
+  const newEndAt = new Date(newEndMs);
   await tx.auctionCycle.update({
     where: { id: cycle.id },
     data: {
       endAt: newEndAt,
-      softCloseExtensions: cycle.softCloseExtensions + Math.round(pushMs / 60000),
+      // Event count only — the budget lives in endAt (see above), so small
+      // pushes no longer round down to zero budget consumed.
+      softCloseExtensions: { increment: 1 },
     },
   });
 

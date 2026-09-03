@@ -39,7 +39,11 @@ async function claimAsNewBidder(plotId: string): Promise<void> {
   if (res.status !== 200) throw new Error(`claim failed: ${res.status} ${await res.text()}`);
 }
 
-async function bidAsNewBidder(plotId: string, maxBidCents: number, name: string): Promise<number> {
+async function bidAsNewBidder(
+  plotId: string,
+  maxBidCents: number,
+  name: string,
+): Promise<{ status: number; extended: boolean }> {
   // No cookie sent -> server mints a fresh bidder per request (distinct bidders).
   const res = await fetch(`${BASE}/api/plots/${plotId}/bid`, {
     method: 'POST',
@@ -52,7 +56,8 @@ async function bidAsNewBidder(plotId: string, maxBidCents: number, name: string)
       maxBidCents,
     }),
   });
-  return res.status;
+  const body = (await res.json().catch(() => ({}))) as { softCloseExtended?: boolean };
+  return { status: res.status, extended: res.status === 200 && body.softCloseExtended === true };
 }
 
 async function main() {
@@ -68,8 +73,10 @@ async function main() {
   const names = ['BidderA', 'BidderB', 'BidderC', 'BidderD', 'BidderE', 'BidderF'].slice(0, BIDDERS);
 
   console.log(`Firing ${BIDDERS} parallel bids with maxes [${maxes.join(', ')}]...`);
-  const statuses = await Promise.all(maxes.map((max, i) => bidAsNewBidder(plot.id, max, names[i])));
-  console.log('statuses:', statuses.join(','));
+  const outcomes = await Promise.all(maxes.map((max, i) => bidAsNewBidder(plot.id, max, names[i])));
+  const statuses = outcomes.map((o) => o.status);
+  const extendedResponses = outcomes.filter((o) => o.extended).length;
+  console.log('statuses:', statuses.join(','), `extended-responses: ${extendedResponses}`);
 
   // 3. Verify final state, not per-request statuses: race outcomes are
   // order-dependent (late low bids are correctly rejected as too-low).
@@ -87,6 +94,12 @@ async function main() {
     select: { currentLeaderPreBidId: true },
   });
   const bidCount = await prisma.bid.count({ where: { cycleId: cycle.id } });
+  // Extension audit (Part 3): every request that observed an extension
+  // marks exactly its own ledger row, so marked ticks === extended
+  // responses — no orphan extensions, no double-marking under concurrency.
+  const markedTicks = await prisma.bid.count({
+    where: { cycleId: cycle.id, triggeredExtension: true },
+  });
 
   let pass = true;
   if (preBids.length < 2) {
@@ -118,6 +131,13 @@ async function main() {
   if (bidCount === 0) {
     pass = false;
     console.error('FAIL: no ledger ticks written');
+  }
+
+  if (markedTicks !== extendedResponses) {
+    pass = false;
+    console.error(
+      `FAIL: marked extension ticks ${markedTicks} != extended responses ${extendedResponses}`,
+    );
   }
 
   console.log(

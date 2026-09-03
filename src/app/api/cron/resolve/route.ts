@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { resolveEndedCycles } from '@/server/auction/worker';
 
+// Settlement trigger for the external schedulers (Part 3:
+// cron-not-configured). Primary: .github/workflows/resolve-cron.yml every 5
+// min. Safety net: vercel.json's daily cron (Hobby-plan ceiling). See
+// docs/deployment.md §3 for granularity, latency, and alerting.
+//
 // External cron callers have no Origin header and no bidder cookie —
 // bypass the shared guard helpers and authenticate with a shared secret.
 export const dynamic = 'force-dynamic';

@@ -15,6 +15,11 @@
  *      exactly once (no double RESOLVED, no double-captured winner).
  *   F. Stuck RESOLVING recovery: a cycle stuck in RESOLVING older than
  *      RESOLVING_TIMEOUT_MINUTES returns to OPEN (recovered >= 1).
+ *   G. Late-bid survival (worker-endat-race): sweep read, soft-close
+ *      extension, worker claim — the worker must NOT settle a cycle whose
+ *      endAt moved past the sweep timestamp, via the claim predicate (G1)
+ *      or via the under-lock recheck when the extension lands after the
+ *      claim (G2, lock-held interleaving).
  *
  * Usage: npx tsx scripts/resolve-worker-proof.ts
  * Reset after: npx tsx prisma/seed.ts
@@ -22,7 +27,8 @@
 import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client';
-import { resolveEndedCycles } from '../src/server/auction/worker';
+import { resolveEndedCycles, resolveOneCycle } from '../src/server/auction/worker';
+import { lockPlot, applySoftClose } from '../src/server/auction/engine';
 import {
   injectAttachAuthFailure,
   clearAttachAuthFailures,
@@ -401,6 +407,130 @@ async function scenarioF(): Promise<void> {
   );
 }
 
+/** G. Late-bid survival: an extended cycle is never settled by a stale sweep. */
+async function scenarioG(): Promise<void> {
+  console.log('G. worker-endat-race: extended cycles survive the sweep');
+
+  // G1: extension lands BEFORE the worker claim -> claim predicate rejects.
+  {
+    const plotId = await makePlot('proof-2-3-g1');
+    const originalEndAt = new Date(Date.now() - 30_000); // expired
+    const cycleId = await openCycle(plotId, originalEndAt);
+    await prisma.plot.update({
+      where: { id: plotId },
+      data: { status: 'LIVE', currentCycleId: cycleId },
+    });
+    const bidder = await makeBidder('G1-alpha');
+    const pbId = await addPreBid(cycleId, plotId, bidder, 'Alpha', 2000);
+
+    // Sweep read (captured timestamp): the cycle looks eligible...
+    const sweepNow = new Date();
+    const eligible = await prisma.auctionCycle.findMany({
+      where: { status: 'OPEN', endAt: { lte: sweepNow } },
+      select: { id: true },
+    });
+    check('G1 sweep read sees the expired cycle', eligible.some((c) => c.id === cycleId));
+
+    // ...but a late bid received inside the soft-close window extends it
+    // first (same engine call the bid route makes, under the plot lock).
+    const receivedAt = new Date(originalEndAt.getTime() - 10_000);
+    const extendedEndAt = await prisma.$transaction(async (tx) => {
+      await lockPlot(tx, plotId);
+      const cycle = await tx.auctionCycle.findFirstOrThrow({ where: { id: cycleId } });
+      const softClose = await applySoftClose(tx, cycle, receivedAt);
+      check('G1 late bid extends the window', softClose.extended === true);
+      return softClose.newEndAt;
+    });
+    check('G1 extension moves endAt past the sweep timestamp', extendedEndAt.getTime() > sweepNow.getTime());
+
+    // Worker claim with the STALE sweep timestamp must refuse the cycle.
+    const outcome = await resolveOneCycle(cycleId, sweepNow);
+    check('G1 worker declines the extended cycle', outcome === null);
+
+    const cycle = await prisma.auctionCycle.findUniqueOrThrow({ where: { id: cycleId } });
+    check('G1 cycle still OPEN', cycle.status === 'OPEN');
+    check(
+      'G1 extended endAt preserved (not settled, not truncated)',
+      cycle.endAt.getTime() === extendedEndAt.getTime(),
+      `endAt=${cycle.endAt.toISOString()}`,
+    );
+    check('G1 no settlement recorded', cycle.winnerPreBidId === null && cycle.clearingPriceCents === null);
+    const pb = await prisma.preBid.findUniqueOrThrow({ where: { id: pbId } });
+    check('G1 candidate still ACTIVE', pb.status === 'ACTIVE');
+    const ticks = await prisma.bid.count({ where: { cycleId } });
+    check('G1 no ledger ticks written', ticks === 0, `ticks=${ticks}`);
+    const plot = await getPlot(plotId);
+    check('G1 plot still LIVE on the same cycle', plot.status === 'LIVE' && plot.currentCycleId === cycleId);
+  }
+
+  // G2: extension lands AFTER the claim but BEFORE the worker's main tx
+  // takes the plot lock -> under-lock recheck reopens without settlement.
+  {
+    const plotId = await makePlot('proof-2-3-g2');
+    const cycleId = await openCycle(plotId, new Date(Date.now() - 30_000)); // expired
+    await prisma.plot.update({
+      where: { id: plotId },
+      data: { status: 'LIVE', currentCycleId: cycleId },
+    });
+    const bidder = await makeBidder('G2-alpha');
+    const pbId = await addPreBid(cycleId, plotId, bidder, 'Alpha', 2000);
+    const sweepNow = new Date();
+
+    // Hold the plot lock so the worker's main tx blocks right after its
+    // (lock-free) claim commits — the exact claim-then-extend interleaving.
+    let release!: () => void;
+    const gate = new Promise<void>((res) => {
+      release = res;
+    });
+    const holder = prisma.$transaction(
+      async (tx) => {
+        await lockPlot(tx, plotId);
+        await gate;
+      },
+      { timeout: 15_000 },
+    );
+
+    const workerPromise = resolveOneCycle(cycleId, sweepNow);
+
+    // Wait for the claim to land (poll, bounded).
+    let claimed = false;
+    for (let i = 0; i < 200; i++) {
+      const row = await prisma.auctionCycle.findUniqueOrThrow({
+        where: { id: cycleId },
+        select: { status: true },
+      });
+      if (row.status === 'RESOLVING') {
+        claimed = true;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    check('G2 claim landed while the lock was held', claimed);
+
+    // The late bid's extension commits while the worker is queued on the lock.
+    const extendedEndAt = new Date(sweepNow.getTime() + 3 * 60_000);
+    await prisma.auctionCycle.update({ where: { id: cycleId }, data: { endAt: extendedEndAt } });
+
+    release();
+    await holder;
+    const outcome = await workerPromise;
+    check('G2 worker reopens instead of settling', outcome === null);
+
+    const cycle = await prisma.auctionCycle.findUniqueOrThrow({ where: { id: cycleId } });
+    check('G2 cycle back to OPEN', cycle.status === 'OPEN');
+    check(
+      'G2 extended endAt preserved',
+      cycle.endAt.getTime() === extendedEndAt.getTime(),
+      `endAt=${cycle.endAt.toISOString()}`,
+    );
+    check('G2 no settlement recorded', cycle.winnerPreBidId === null && cycle.clearingPriceCents === null);
+    const pb = await prisma.preBid.findUniqueOrThrow({ where: { id: pbId } });
+    check('G2 candidate still ACTIVE', pb.status === 'ACTIVE');
+    const ticks = await prisma.bid.count({ where: { cycleId } });
+    check('G2 no ledger ticks written', ticks === 0, `ticks=${ticks}`);
+  }
+}
+
 async function cleanupProofPlots(): Promise<void> {
   // Synthetic plots live at origin (0,0), which would overlap the real grid
   // if left behind — hard-delete every proof plot and its descendants.
@@ -425,6 +555,7 @@ async function main(): Promise<void> {
   await scenarioD();
   await scenarioE();
   await scenarioF();
+  await scenarioG();
   await cleanupProofPlots();
   console.log(failures === 0 ? '\nPASS: all 2.3 proof scenarios passed' : `\nFAILED: ${failures} check(s)`);
   if (failures > 0) process.exitCode = 1;

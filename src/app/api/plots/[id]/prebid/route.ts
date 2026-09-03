@@ -11,6 +11,17 @@
  * pre-bid at the tier floor on a contested cycle could never lead. A
  * next-cycle commitment stays a next-cycle commitment: the worker's rotation
  * (2.3) or the next claim attaches it.
+ *
+ * Queued-row policy (Part 3 idle-prebid-squatting): a queued pre-bid
+ * (cycleId null, ACTIVE) lives until it attaches to the next cycle (claim
+ * or worker rotation) or its bidder supersedes it with a higher submit.
+ * Attach-time authorization failure expires it (EXPIRED / 'expired'). There
+ * is deliberately no time-based expiry — a queue for a plot nobody ever
+ * claims simply waits. Queues are only meaningful once an auction exists or
+ * is imminent, so IDLE plots are rejected with `claim-first` (directing the
+ * caller to the claim action); LIVE plots accept queues whether or not an
+ * OPEN cycle currently exists (the RESOLVING handover still rotates into a
+ * next cycle, and a cycled-out LIVE plot gets its next auction from claim).
  */
 
 import { prisma } from '@/server/prisma';
@@ -58,6 +69,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const result = await prisma.$transaction(async (tx) => {
     await lockPlot(tx, id);
 
+    // Revalidate state INSIDE the plot lock: the pre-tx read above is stale
+    // the moment a worker settles the cycle (LIVE -> IDLE) or a rival claim
+    // lands (IDLE -> LIVE). Acting on the stale copy would queue a pre-bid
+    // onto an IDLE plot nobody may ever claim (squatting) or bounce a
+    // legitimate queue during the RESOLVING handover.
+    const live = await tx.plot.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+    if (!live) return { code: 'gone' as const };
+    if (live.status === 'IDLE') return { code: 'claim-first' as const };
+
     // Upward-only guard on the bidder's QUEUED row (cycleId = null) so a
     // stale client can never lower an existing commitment.
     const queued = await tx.preBid.findFirst({
@@ -77,8 +100,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       brand: { companyName, tagline, targetUrl, twitterHandle, mrrText },
     });
 
-    return { code: 'ok' as const, plotStatus: plot.status };
+    return { code: 'ok' as const, plotStatus: live.status };
   });
+
+  if (result.code === 'gone') {
+    return errorJson(404, 'Plot not found');
+  }
+
+  if (result.code === 'claim-first') {
+    // State-specific conflict: the plot has no auction to queue behind.
+    // The modal maps this code to a one-click switch into claim mode.
+    return errorJson(
+      409,
+      'This plot has no active auction yet — claim it to open the bidding',
+      { code: 'claim-first', plotId: id },
+    );
+  }
 
   if (result.code === 'not-higher') {
     return errorJson(

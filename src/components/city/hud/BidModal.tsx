@@ -78,6 +78,7 @@ export function BidModal() {
   const status = useBidFormStore((s) => s.status);
   const serverError = useBidFormStore((s) => s.serverError);
   const closeBidForm = useBidFormStore((s) => s.closeBidForm);
+  const openBidForm = useBidFormStore((s) => s.openBidForm);
   const setStatus = useBidFormStore((s) => s.setStatus);
   const tryMarkSubmit = useBidFormStore((s) => s.tryMarkSubmit);
 
@@ -198,6 +199,13 @@ export function BidModal() {
         return;
       case 'outbid':
         setStatus('outbid', outcome.message);
+        return;
+      case 'claim-first':
+        // The auction the pre-bid targeted is gone (stale tab, or the plot
+        // was never LIVE). Flip into claim mode keeping the typed values,
+        // so the next click opens the bidding instead of failing again.
+        openBidForm(plot.id, 'claim');
+        setStatus('error', outcome.message);
         return;
       case 'fieldErrors':
         // Server-side truth wins — same contract, same field names.

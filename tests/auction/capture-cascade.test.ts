@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { runCaptureCascade } from '../../src/server/auction/finalize';
+import { runCaptureCascade, CaptureFailureError } from '../../src/server/auction/finalize';
 import { secondPriceFor } from '../../src/server/auction/engine';
+import { makeMemoryAttemptStore } from './attempt-store-fake';
 
 type Cand = {
   id: string;
@@ -45,6 +46,8 @@ interface Harness {
   lost: Array<{ id: string; reason: string }>;
   failCapture: Set<string>;
   failCancel: Set<string>;
+  failCaptureRetryable: Set<string>;
+  store: ReturnType<typeof makeMemoryAttemptStore>;
 }
 
 function makeHarness(): Harness {
@@ -54,15 +57,23 @@ function makeHarness(): Harness {
     lost: [],
     failCapture: new Set(),
     failCancel: new Set(),
+    failCaptureRetryable: new Set(),
+    store: makeMemoryAttemptStore(),
   };
 }
 
 function runCascade(candidates: Cand[], h: Harness) {
   return runCaptureCascade({
+    cycleId: 'test-cycle',
     candidates,
     computeRemainingPrice: (c, remaining) => priceFor(c, remaining as Cand[]),
     capture: async (pb, amountCents) => {
-      if (h.failCapture.has(pb.id)) throw new Error(`injected failure for ${pb.id}`);
+      if (h.failCaptureRetryable.has(pb.id)) {
+        throw new CaptureFailureError(pb.id, 'injected-transport', true);
+      }
+      // Definitive card decline (plain harness failures are declines — an
+      // UNKNOWN error would abort the pass instead of falling through).
+      if (h.failCapture.has(pb.id)) throw new CaptureFailureError(pb.id, 'injected-decline', false);
       h.captured.push({ id: pb.id, amount: amountCents });
       return amountCents;
     },
@@ -73,6 +84,7 @@ function runCascade(candidates: Cand[], h: Harness) {
     markLost: async (preBidId, reason) => {
       h.lost.push({ id: preBidId, reason });
     },
+    store: h.store,
   });
 }
 
@@ -146,6 +158,74 @@ test('cascade: release (cancel) failure never blocks resolution', async () => {
   assert.deepEqual(h.cancelled, []); // b's cancel threw
   assert.deepEqual(outcome.releasedPreBidIds, []); // not counted as released
   assert.equal(h.lost.length, 0); // and it must NOT be marked lost either
+  // ...but the failed release persists for sweep retry instead of vanishing.
+  assert.deepEqual(outcome.releaseFailedPreBidIds, ['b']);
+  assert.equal(
+    h.store.rows.filter((r) => r.kind === 'RELEASE' && r.status === 'RELEASE_FAILED').length,
+    1,
+  );
+});
+
+test('cascade: unknown capture errors abort the pass (no fallback on uncertain money)', async () => {
+  const h = makeHarness();
+  const outcome = await runCaptureCascade({
+    cycleId: 'test-cycle',
+    candidates: [cand('a', 2000), cand('b', 1500)],
+    computeRemainingPrice: (c, remaining) => priceFor(c, remaining as Cand[]),
+    capture: async () => {
+      throw new Error('mystery transport explosion');
+    },
+    cancel: async (pb) => {
+      h.cancelled.push(pb.id);
+    },
+    markLost: async (preBidId, reason) => {
+      h.lost.push({ id: preBidId, reason });
+    },
+    store: h.store,
+  });
+
+  assert.equal(outcome.aborted, true);
+  assert.equal(outcome.winnerPreBidId, null);
+  assert.equal(h.lost.length, 0); // no fallback selected, nobody marked lost
+  assert.deepEqual(h.cancelled, []); // no releases without a winner
+  assert.deepEqual(
+    h.store.rows.map((r) => r.status),
+    ['FAILED_RETRYABLE'],
+  );
+});
+
+test('cascade: retryable failure aborts without touching later candidates', async () => {
+  const h = makeHarness();
+  h.failCaptureRetryable.add('a');
+  const outcome = await runCascade([cand('a', 2000), cand('b', 1500)], h);
+
+  assert.equal(outcome.aborted, true);
+  assert.equal(outcome.winnerPreBidId, null);
+  assert.equal(h.captured.length, 0); // b never attempted
+  assert.equal(h.lost.length, 0);
+});
+
+test('cascade: already-captured key is success without a new Stripe call', async () => {
+  const h = makeHarness();
+  const a = cand('a', 1000);
+  const b = cand('b', 800);
+  // A previous pass charged a at 850 but crashed before recording the win.
+  const key = 'saasity:v1:capture:test-cycle:a:850';
+  const pending = await h.store.createPending({
+    cycleId: 'test-cycle',
+    preBidId: 'a',
+    kind: 'CAPTURE',
+    amountCents: 850,
+    idempotencyKey: key,
+  });
+  await h.store.markAttempt(pending.id, { status: 'CAPTURED' });
+
+  const outcome = await runCascade([a, b], h);
+
+  assert.equal(outcome.winnerPreBidId, 'a');
+  assert.equal(outcome.clearingPriceCents, 850);
+  assert.deepEqual(h.captured, []); // adopted — Stripe never called again
+  assert.deepEqual(outcome.releasedPreBidIds, ['b']);
 });
 
 test('cascade: every candidate pays at least the floor', async () => {

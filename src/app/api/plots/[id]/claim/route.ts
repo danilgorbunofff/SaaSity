@@ -1,7 +1,9 @@
 /**
  * Phase 2.2 — POST /api/plots/[id]/claim
  * Open an auction cycle on an IDLE plot: claimer's pre-bid at >= tier floor,
- * queued next-cycle pre-bids attach, resolution runs once. 200 | 404 | 409.
+ * queued next-cycle pre-bids attach, resolution runs once.
+ * 200 | 402 | 404 | 409 | 429 (402 = attach-time authorization failed,
+ * compensated: row EXPIRED, price/leader repaired, shell cancelled).
  */
 
 import { prisma } from '@/server/prisma';
@@ -11,11 +13,12 @@ import { TIERS } from '@/lib/tiers';
 import {
   lockPlot,
   startCycle,
-  attachQueuedPreBids,
+  attachPreBidsToCycle,
   upsertPreBid,
   resolveCycle,
 } from '@/server/auction/engine';
-import { emitBidPlaced } from '@/server/realtime/bus';
+import { authorizeAttachedRows } from '@/server/auction/finalize';
+import { emitBidPlaced, emitCycleResolved } from '@/server/realtime/bus';
 import { parseBody, isSameOrigin, errorJson } from '@/server/auction/http';
 
 export const dynamic = 'force-dynamic';
@@ -59,6 +62,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   // (startCycle always creates a snapshot, so this is belt-and-braces).
   const floor = TIERS[plot.tier].floorCents;
 
+  // Part 3 authorization seam (T1): authorize the already-queued rows BEFORE
+  // the claim tx (no lock held — pure reads + Stripe I/O), so only survivor
+  // ids attach below. Failures expire while still queued.
+  const queuedIds = (
+    await prisma.preBid.findMany({
+      where: { plotId: id, cycleId: null, status: 'ACTIVE' },
+      select: { id: true },
+    })
+  ).map((q) => q.id);
+  const queuedAuth = await authorizeAttachedRows(queuedIds);
+
   const result = await prisma.$transaction(async (tx) => {
     await lockPlot(tx, id);
 
@@ -76,8 +90,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       brand: { companyName, tagline, targetUrl, twitterHandle, mrrText },
     });
 
-    // Queued next-cycle pre-bids (placed while the plot was IDLE) attach.
-    await attachQueuedPreBids(tx, id, claim.id);
+    // Only pre-authorized survivors attach — never "every queued row", so a
+    // row that arrived between the authorize pass above and this tx stays
+    // queued for the next rotation instead of entering unauthorized.
+    await attachPreBidsToCycle(tx, queuedAuth.authorizedIds, claim.id);
 
     const resolution = await resolveCycle(tx, claim, { humanSubmitCents: maxBidCents });
 
@@ -96,6 +112,61 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // Someone claimed it milliseconds earlier — the modal's outbid state.
     return errorJson(409, 'Plot already has an active auction', {
       code: 'outbid',
+      plotId: id,
+    });
+  }
+
+  // The claimer's own attach boundary is row creation above: authorize it
+  // post-commit (Stripe I/O never inside the tx). On failure the row is
+  // already EXPIRED by the helper — re-resolve to repair the price/leader
+  // computed with the dead row (cancelling the shell when nothing survives,
+  // so the plot never strands LIVE-but-empty), and tell the caller to fix
+  // payment. Watchers get the matching event, not silence.
+  const claimerAuth = await authorizeAttachedRows([result.preBidId]);
+  if (claimerAuth.expiredIds.includes(result.preBidId)) {
+    const repaired = await prisma.$transaction(async (tx) => {
+      await lockPlot(tx, id);
+      const cycle = await tx.auctionCycle.findUnique({ where: { id: result.cycleId } });
+      if (!cycle || cycle.status !== 'OPEN') return null;
+      const resolution = await resolveCycle(tx, cycle, {});
+      const survivors = await tx.preBid.count({
+        where: { cycleId: cycle.id, status: 'ACTIVE' },
+      });
+      if (survivors === 0) {
+        await tx.auctionCycle.update({
+          where: { id: cycle.id },
+          data: { status: 'CANCELLED' },
+        });
+        await tx.plot.update({
+          where: { id },
+          data: { status: 'IDLE', currentCycleId: null, currentLeaderPreBidId: null },
+        });
+        return { cancelled: true as const, resolution };
+      }
+      return { cancelled: false as const, resolution };
+    });
+    if (repaired && !repaired.cancelled && repaired.resolution) {
+      emitBidPlaced({
+        plotId: id,
+        cycleId: result.cycleId,
+        currentPriceCents: repaired.resolution.priceCents,
+        leaderPreBidId: repaired.resolution.leaderPreBidId,
+        isProxy: true,
+        endAt: result.endAt,
+      });
+    }
+    if (repaired?.cancelled) {
+      // The shell never held a bid: tell watchers the plot is IDLE again.
+      emitCycleResolved({
+        plotId: id,
+        cycleId: result.cycleId,
+        winner: null,
+        clearingPriceCents: null,
+        nextCycle: null,
+      });
+    }
+    return errorJson(402, 'Payment authorization failed — no bid was placed', {
+      code: 'authorization-failed',
       plotId: id,
     });
   }

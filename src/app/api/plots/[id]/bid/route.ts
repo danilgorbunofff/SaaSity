@@ -2,7 +2,8 @@
  * Phase 2.2 — POST /api/plots/[id]/bid
  * Manual bid on a LIVE cycle: top-up own ACTIVE pre-bid upward-only or
  * outbid the leader; server-truth minimum; reset-based capped soft-close.
- * 200 | 400 | 404 | 409 | 429.
+ * 200 | 400 | 402 | 404 | 409 | 429 (402 = attach-time authorization failed,
+ * compensated: row EXPIRED, price/leader repaired, shell cancelled).
  */
 
 import { prisma } from '@/server/prisma';
@@ -14,7 +15,8 @@ import {
   resolveCycle,
   applySoftClose,
 } from '@/server/auction/engine';
-import { emitBidPlaced, emitCycleExtended } from '@/server/realtime/bus';
+import { emitBidPlaced, emitCycleExtended, emitCycleResolved } from '@/server/realtime/bus';
+import { authorizeAttachedRows } from '@/server/auction/finalize';
 import { parseBody, isSameOrigin, errorJson } from '@/server/auction/http';
 
 export const dynamic = 'force-dynamic';
@@ -106,7 +108,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // Soft-close evaluated exactly once per request, from receivedAt.
     const softClose = await applySoftClose(tx, cycle, now);
 
-    const resolution = await resolveCycle(tx, cycle, { humanSubmitCents: maxBidCents });
+    const resolution = await resolveCycle(tx, cycle, {
+      humanSubmitCents: maxBidCents,
+      // Attribute the extension to this request's ledger row (or its
+      // requester-attributed tick when nothing moved).
+      triggeredExtension: softClose.extended
+        ? { preBidId, bidderId: bidder.bidderId }
+        : undefined,
+    });
 
     return {
       code: 'ok' as const,
@@ -140,6 +149,58 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         minimumNextBidCents: result.minimumNext,
       });
     case 'ok': {
+      // Part 3 authorization seam (T2): the bidder's attach boundary is the
+      // upsert above — authorize post-commit (Stripe I/O never inside the
+      // tx). On failure the row is already EXPIRED by the helper: repair
+      // the price/leader (cancelling the shell when nothing survives) and
+      // report 402 instead of the bid.
+      const auth = await authorizeAttachedRows([result.preBidId]);
+      if (auth.expiredIds.includes(result.preBidId)) {
+        const repaired = await prisma.$transaction(async (tx) => {
+          await lockPlot(tx, id);
+          const liveCycle = await tx.auctionCycle.findUnique({ where: { id: result.cycleId } });
+          if (!liveCycle || liveCycle.status !== 'OPEN') return null;
+          const resolution = await resolveCycle(tx, liveCycle, {});
+          const survivors = await tx.preBid.count({
+            where: { cycleId: liveCycle.id, status: 'ACTIVE' },
+          });
+          if (survivors === 0) {
+            await tx.auctionCycle.update({
+              where: { id: liveCycle.id },
+              data: { status: 'CANCELLED' },
+            });
+            await tx.plot.update({
+              where: { id },
+              data: { status: 'IDLE', currentCycleId: null, currentLeaderPreBidId: null },
+            });
+            return { cancelled: true as const, resolution };
+          }
+          return { cancelled: false as const, resolution };
+        });
+        if (repaired && !repaired.cancelled && repaired.resolution) {
+          emitBidPlaced({
+            plotId: id,
+            cycleId: result.cycleId,
+            currentPriceCents: repaired.resolution.priceCents,
+            leaderPreBidId: repaired.resolution.leaderPreBidId,
+            isProxy: true,
+            endAt: result.endAt,
+          });
+        }
+        if (repaired?.cancelled) {
+          emitCycleResolved({
+            plotId: id,
+            cycleId: result.cycleId,
+            winner: null,
+            clearingPriceCents: null,
+            nextCycle: null,
+          });
+        }
+        return errorJson(402, 'Payment authorization failed — no bid was placed', {
+          code: 'authorization-failed',
+          plotId: id,
+        });
+      }
       // Publish AFTER tx commit (M3 seam constraint: engine txs never
       // publish). isProxy = the proxy engine outbid a human challenger.
       // No brand here (Part 1 fix): the provisional leader of an open

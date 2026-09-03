@@ -28,8 +28,23 @@ export const SOFT_CLOSE_MINUTES = 3;
 /** Total cap on extensions from soft-close, per cycle. */
 export const SOFT_CLOSE_CAP_MINUTES = 120;
 
-/** How long a cycle stays in RESOLVING state before the worker escalates. */
-export const RESOLVING_TIMEOUT_MINUTES = 5;
+/**
+ * How long a cycle may sit in RESOLVING before the sweep reopens it.
+ * Kept at >= 2x the primary sweep cadence (GitHub Actions every 5 min —
+ * see docs/deployment.md): a healthy settlement that spans one missed tick
+ * must never look "stuck". M3 lengthens settlements (sequential Stripe
+ * calls); revisit then.
+ */
+export const RESOLVING_TIMEOUT_MINUTES = 10;
+
+/**
+ * Alert line for ended-but-still-OPEN cycles: 2x the primary 5-minute
+ * cadence. Past this, the primary scheduler (or every fallback) has missed
+ * at least two ticks — page-worthy, not noise. resolveEndedCycles logs a
+ * structured warn and reports staleCount/maxStaleMs in its outcome (which
+ * the cron route surfaces in its JSON for external monitors).
+ */
+export const STALE_ENDED_CYCLE_ALERT_MINUTES = 10;
 
 export function formatPrice(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;

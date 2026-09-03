@@ -23,6 +23,7 @@ export type SubmitResult =
       softCloseExtended: boolean;
     }
   | { kind: 'outbid'; message: string; minimumNextBidCents?: number }
+  | { kind: 'claim-first'; message: string }
   | { kind: 'fieldErrors'; fieldErrors: FieldErrors }
   | { kind: 'error'; message: string; retryAfterSeconds?: number };
 
@@ -112,6 +113,15 @@ export async function submitBid(args: {
       ...(typeof body.minimumNextBidCents === 'number'
         ? { minimumNextBidCents: body.minimumNextBidCents }
         : {}),
+    };
+  }
+
+  if (res.status === 409 && body.code === 'claim-first') {
+    // Stale pre-bid tab: the auction closed (or never opened) while the
+    // form was up. The modal flips into claim mode on this kind.
+    return {
+      kind: 'claim-first',
+      message: body.error ?? 'This plot has no active auction yet — claim it to open the bidding.',
     };
   }
 

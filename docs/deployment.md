@@ -85,7 +85,8 @@ mechanisms are prepped; use one or both depending on your Vercel plan.
 path.** Vercel's Hobby plan hard-rejects (deploy fails outright, it does not
 silently downgrade) any cron schedule that would run more than once a day.
 Cycles run 6-24 hours and are designed to resolve within minutes of ending
-(`RESOLVING_TIMEOUT_MINUTES = 5` in `src/lib/tiers.ts`) — once a day is not
+(`RESOLVING_TIMEOUT_MINUTES = 10` in `src/lib/tiers.ts` — 2x the primary
+5-minute cadence) — once a day is not
 adequate for real gameplay. If/when the project is on **Vercel Pro**,
 tighten this to something like `*/5 * * * *` so Vercel's own cron becomes
 the primary mechanism.
@@ -110,6 +111,32 @@ Actions):
 GitHub's scheduler is best-effort (can lag under load; disabled after 60
 days of no activity on the default branch, reset by any push) — fine for a
 project in active development, worth knowing if this repo ever goes quiet.
+
+### Schedule granularity and expected resolution latency
+
+| Layer | Cadence | Role |
+| --- | --- | --- |
+| GitHub Actions `resolve-cron.yml` | every 5 min (best-effort) | **Primary** scheduler |
+| `GET /api/plots` piggyback sweep | at most every 30 s, only when grid reads arrive | **Secondary** recovery net — settles stragglers between ticks; logs a warn whenever it actually settles anything, so a dead primary shows up in the logs |
+| `vercel.json` cron (`0 4 * * *`) | once daily (Hobby-plan ceiling) | **Safety net** only |
+
+Expected settlement latency after a cycle's `endAt`: **under ~10 minutes**
+(one 5-minute tick plus best-effort lag). `RESOLVING_TIMEOUT_MINUTES = 10`
+in `src/lib/tiers.ts` is deliberately 2x the primary cadence, so a healthy
+settlement spanning one missed tick is never mistaken for stuck; the
+`STALE_ENDED_CYCLE_ALERT_MINUTES = 10` alert line matches it.
+
+### Alerting: what to watch
+
+- **Log warn `[auction:worker] stale ended cycles`** — an ended-but-OPEN
+  cycle outlived the 10-minute alert line: the primary scheduler plus every
+  fallback missed at least two ticks. Page-worthy.
+- **Cron response JSON**: `/api/cron/resolve` returns
+  `{ ok, recovered, resolved, staleCount, maxStaleMs }` — alert an external
+  monitor (UptimeRobot/BetterStack/Vercel Log Drains) on `staleCount > 0`.
+- **`[auction:sweep] secondary sweep settled work the primary missed`** —
+  the primary is lagging or dead; investigate before the daily net becomes
+  the only path.
 
 ## 4. Go-live checklist
 

@@ -48,6 +48,23 @@ enum PreBidStatus {
   EXPIRED
 }
 
+enum SettlementKind {
+  CAPTURE
+  RELEASE
+}
+
+enum SettlementStatus {
+  // CAPTURE lifecycle: recorded before the Stripe call, terminal after.
+  PENDING
+  CAPTURED
+  FAILED_RETRYABLE
+  FAILED_DEFINITIVE
+  // RELEASE lifecycle: holds on losing candidates are released, never
+  // blocking settlement; failures persist for sweep retry.
+  RELEASED
+  RELEASE_FAILED
+}
+
 model Plot {
   id      String   @id
   tier    PlotTier
@@ -135,6 +152,14 @@ model AuctionCycle {
   preBids PreBid[]
   bids    Bid[]
 
+  // Part 3 capture-replay: persisted settlement state machine. Every
+  // money-moving intent (CAPTURE) and money-releasing intent (RELEASE) is
+  // recorded here BEFORE the Stripe call, so a crash at any point resumes
+  // from this ledger instead of guessing. Rows are audit trail — never
+  // updated except for their own status transitions, never deleted except
+  // with their cycle.
+  settlementAttempts SettlementAttempt[]
+
   // Inverse of Plot.currentCycle ("which cycle is this plot currently running")
   currentForPlot Plot? @relation("PlotCurrentCycle")
 
@@ -216,4 +241,54 @@ model Bid {
 
   @@index([cycleId, createdAt])
   @@index([plotId, createdAt])
+}
+
+// Part 3 capture-replay: persisted settlement state machine (one row per
+// money intent). The worker records a PENDING row BEFORE every Stripe call
+// and transitions it after; any crash resumes from this ledger:
+//   - a CAPTURED row is a confirmed charge — reconcile settles from the
+//     record and the cycle is never reopened without reconciliation;
+//   - the idempotencyKey is stable across worker retries for the same
+//     intended settlement (M3 passes it to Stripe), so "already captured"
+//     is success, never a double charge;
+//   - FAILED_DEFINITIVE selects the next fallback candidate;
+//     FAILED_RETRYABLE aborts the pass (no fallback on unknown money state)
+//     and retries on the next sweep with the same key;
+//   - RELEASE rows track hold releases on losers; RELEASE_FAILED persists
+//     for sweep retry instead of being swallowed.
+model SettlementAttempt {
+  id      String       @id @default(cuid())
+  cycleId String
+  cycle   AuctionCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+
+  // No FK to PreBid by design: rows are the audit trail, keyed by id.
+  preBidId String
+
+  kind   SettlementKind
+  status SettlementStatus @default(PENDING)
+
+  // 1-based per (cycle, preBid, kind): retries add rows, never mutate history.
+  attemptNo Int
+
+  // CAPTURE only: the intended charge. Part of the idempotency key — the
+  // same bidder re-attempted at a different price is a different settlement.
+  amountCents Int?
+
+  // Stable across retries for the same intended settlement; M3 passes it as
+  // the Stripe idempotency key. Non-unique (retries share it) — "already
+  // captured under this key" is looked up, not constraint-violated.
+  idempotencyKey String
+
+  stripePaymentIntentId String?
+  // Raw Stripe result / error code payload (JSON text, audit only).
+  stripeResult String?
+  // transport | card | conflict | release — why a FAILED row failed.
+  failureKind String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cycleId, preBidId, kind, attemptNo])
+  @@index([cycleId, status])
+  @@index([idempotencyKey])
 }

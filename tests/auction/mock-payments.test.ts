@@ -2,9 +2,16 @@
  * Phase 2.5 — the mock-money kill switch.
  *
  * The whole point: a deployment that has NOT opted into `MOCK_PAYMENTS=1`
- * must never crown a winner nobody paid for. Without the flag every
- * settlement stub throws, so the capture cascade degrades to "no winner"
- * instead of faking a successful charge.
+ * must never crown a winner nobody paid for. Without the flag every stub
+ * that FAKES MONEY MOVEMENT (capture/cancel) throws, so the capture cascade
+ * degrades to "no winner" instead of faking a successful charge.
+ *
+ * The attach-authorize stub is deliberately NOT gated: it performs no
+ * financial fiction (pre-M3 it authorizes nothing and returns no intent),
+ * so gating it would brick every claim/bid on a flagless server while
+ * changing nothing about money safety. The money-safety guarantee lives at
+ * capture, which stays gated. Bidding without the flag behaves exactly as
+ * it did before the Part 3 authorization seam existed.
  */
 
 import { test } from 'node:test';
@@ -16,6 +23,7 @@ import {
   authorizePreBidAtAttach,
   type CandidateRow,
 } from '../../src/server/auction/finalize';
+import { makeMemoryAttemptStore } from './attempt-store-fake';
 import { isMockPaymentsEnabled, MockPaymentsDisabledError } from '../../src/server/mock-payments';
 
 function candidate(id: string, maxBidCents: number): CandidateRow {
@@ -38,9 +46,11 @@ async function cascade(): Promise<{
   winnerPreBidId: string | null;
   clearingPriceCents: number | null;
   captureFailedPreBidIds: string[];
+  aborted: boolean;
 }> {
   const failed: string[] = [];
   return runCaptureCascade({
+    cycleId: 'mock-test-cycle',
     candidates: CANDIDATES,
     computeRemainingPrice: (c, remaining) => {
       const highestOther = remaining.reduce((m, r) => Math.max(m, r.maxBidCents), 0);
@@ -51,10 +61,12 @@ async function cascade(): Promise<{
     markLost: async (id) => {
       failed.push(id);
     },
+    store: makeMemoryAttemptStore(),
   }).then((outcome) => ({
     winnerPreBidId: outcome.winnerPreBidId,
     clearingPriceCents: outcome.clearingPriceCents,
     captureFailedPreBidIds: failed,
+    aborted: outcome.aborted,
   }));
 }
 
@@ -65,7 +77,9 @@ test('MOCK_PAYMENTS off: no settlement is faked', async () => {
     assert.equal(isMockPaymentsEnabled(), false);
     await assert.rejects(() => capturePreBidAuthorization(CANDIDATES[0], 3100), MockPaymentsDisabledError);
     await assert.rejects(() => cancelPreBidAuthorization(CANDIDATES[0]), MockPaymentsDisabledError);
-    await assert.rejects(() => authorizePreBidAtAttach(CANDIDATES[0]), MockPaymentsDisabledError);
+    // Ungated by design (see header): the stub fakes no money movement —
+    // it resolves null having authorized nothing and persisted nothing.
+    assert.equal(await authorizePreBidAtAttach(CANDIDATES[0]), null);
   } finally {
     if (previous === undefined) delete process.env.MOCK_PAYMENTS;
     else process.env.MOCK_PAYMENTS = previous;
@@ -79,7 +93,11 @@ test('MOCK_PAYMENTS off: the cascade yields NO winner (never an unpaid tenant)',
     const outcome = await cascade();
     assert.equal(outcome.winnerPreBidId, null, 'a failed capture must never produce a winner');
     assert.equal(outcome.clearingPriceCents, null);
-    assert.deepEqual(outcome.captureFailedPreBidIds, ['a', 'b', 'c']);
+    // The mock-off throw is not a CaptureFailureError, so the taxonomy
+    // treats it as an uncertain-money abort: no fallback, nobody marked
+    // lost, pass aborted for retry — never a faked settlement.
+    assert.equal(outcome.aborted, true);
+    assert.deepEqual(outcome.captureFailedPreBidIds, []);
   } finally {
     if (previous === undefined) delete process.env.MOCK_PAYMENTS;
     else process.env.MOCK_PAYMENTS = previous;
