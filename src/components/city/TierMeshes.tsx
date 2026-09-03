@@ -72,7 +72,7 @@ export function OuterTowerField({ plots }: { plots: PlotMeshData[] }) {
         const y = plinthY('OUTER') + height / 2;
         return { id: p.id, height, x, y, z };
       }),
-    [plots]
+    [plots],
   );
 
   useLayoutEffect(() => {
@@ -80,7 +80,11 @@ export function OuterTowerField({ plots }: { plots: PlotMeshData[] }) {
       if (!mesh) return;
       instances.forEach((it, i) => {
         tmpMatrix.makeScale(1, scaleY * it.height, 1);
-        tmpMatrix.setPosition(it.x + corner * OUTER_STRIP_OFFSET, it.y, it.z + corner * OUTER_STRIP_OFFSET);
+        tmpMatrix.setPosition(
+          it.x + corner * OUTER_STRIP_OFFSET,
+          it.y,
+          it.z + corner * OUTER_STRIP_OFFSET,
+        );
         mesh.setMatrixAt(i, tmpMatrix);
       });
       mesh.instanceMatrix.needsUpdate = true;
@@ -101,7 +105,8 @@ export function OuterTowerField({ plots }: { plots: PlotMeshData[] }) {
       setHoveredPlotId(id);
       document.body.style.cursor = 'pointer';
     }
-  };  const onPointerOut = (e: ThreeEvent<PointerEvent>) => {
+  };
+  const onPointerOut = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
     setHoveredPlotId(null);
     document.body.style.cursor = 'auto';
@@ -133,17 +138,11 @@ export function OuterTowerField({ plots }: { plots: PlotMeshData[] }) {
         <boxGeometry args={[OUTER_SIZE, 1, OUTER_SIZE]} />
         <meshStandardMaterial color="#1a2030" metalness={0.85} roughness={0.35} />
       </instancedMesh>
-      <instancedMesh
-        ref={stripARef}
-        args={[undefined, undefined, instances.length]}
-      >
+      <instancedMesh ref={stripARef} args={[undefined, undefined, instances.length]}>
         <boxGeometry args={[0.04, 1, 0.04]} />
         <meshBasicMaterial color={NEON.cyan} toneMapped={false} />
       </instancedMesh>
-      <instancedMesh
-        ref={stripBRef}
-        args={[undefined, undefined, instances.length]}
-      >
+      <instancedMesh ref={stripBRef} args={[undefined, undefined, instances.length]}>
         <boxGeometry args={[0.04, 1, 0.04]} />
         <meshBasicMaterial color={NEON.cyan} toneMapped={false} />
       </instancedMesh>

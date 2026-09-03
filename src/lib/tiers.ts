@@ -49,3 +49,16 @@ export const STALE_ENDED_CYCLE_ALERT_MINUTES = 10;
 export function formatPrice(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
+
+/**
+ * Part 6 `mrr-copy`: ONE display convention for the MRR badge.
+ * Storage is raw user text (`$12k` or `$12k MRR` — both in the wild); display
+ * appends ` MRR` only when the text doesn't already end with it, so the
+ * detail card and the 3D billboard render the identical string.
+ */
+export function formatMrrBadge(raw: string | null | undefined): string | null {
+  if (raw == null) return null;
+  const text = raw.trim();
+  if (text === '') return null;
+  return /\bmrr$/i.test(text) ? text : `${text} MRR`;
+}

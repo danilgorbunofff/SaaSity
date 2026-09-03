@@ -72,7 +72,15 @@ async function makePlot(plotId: string): Promise<void> {
   await prisma.plot.upsert({
     where: { id: plotId },
     update: { status: 'LIVE', currentCycleId: null, currentLeaderPreBidId: null },
-    create: { id: plotId, tier: 'OUTER', originX: 0, originY: 0, spanX: 1, spanY: 1, status: 'LIVE' },
+    create: {
+      id: plotId,
+      tier: 'OUTER',
+      originX: 0,
+      originY: 0,
+      spanX: 1,
+      spanY: 1,
+      status: 'LIVE',
+    },
   });
 }
 
@@ -107,7 +115,14 @@ async function addRow(plotId: string, cycleId: string, tag: string, max: number)
 }
 
 async function attempts(cycleId: string): Promise<
-  Array<{ preBidId: string; kind: string; attemptNo: number; status: string; key: string; amount: number | null }>
+  Array<{
+    preBidId: string;
+    kind: string;
+    attemptNo: number;
+    status: string;
+    key: string;
+    amount: number | null;
+  }>
 > {
   const rows = await prisma.settlementAttempt.findMany({
     where: { cycleId },
@@ -144,7 +159,10 @@ async function scenarioAbortRetryable(): Promise<void> {
       rows.length === 1 && rows[0].status === 'FAILED_RETRYABLE' && rows[0].preBidId === idA,
       JSON.stringify(rows),
     );
-    check('leader attempted once, fallback never attempted', getCaptureCallCount(idA) === 1 && getCaptureCallCount(idB) === 0);
+    check(
+      'leader attempted once, fallback never attempted',
+      getCaptureCallCount(idA) === 1 && getCaptureCallCount(idB) === 0,
+    );
     const b = await prisma.preBid.findUniqueOrThrow({ where: { id: idB } });
     check('loser still ACTIVE (no fallback, no release)', b.status === 'ACTIVE', b.status);
 
@@ -162,7 +180,11 @@ async function scenarioAbortRetryable(): Promise<void> {
     const winner = await prisma.preBid.findUniqueOrThrow({ where: { id: idA } });
     check('leader WON at second price', winner.status === 'WON');
     const settled = await prisma.auctionCycle.findUniqueOrThrow({ where: { id: cycleId } });
-    check('clearing price min(5000, 3000+50)', settled.clearingPriceCents === 3050, `got ${settled.clearingPriceCents}`);
+    check(
+      'clearing price min(5000, 3000+50)',
+      settled.clearingPriceCents === 3050,
+      `got ${settled.clearingPriceCents}`,
+    );
   } finally {
     clearCaptureFailures();
   }
@@ -184,19 +206,33 @@ async function scenarioReconcileAfterCapture(): Promise<void> {
     cycleId,
     candidates,
     computeRemainingPrice: (c, remaining) => {
-      const highestOther = remaining.length === 0 ? null : Math.max(...remaining.map((r) => r.maxBidCents));
+      const highestOther =
+        remaining.length === 0 ? null : Math.max(...remaining.map((r) => r.maxBidCents));
       return secondPriceFor(c.maxBidCents, highestOther, 100, 50);
     },
     markLost: async (id) => {
-      await prisma.preBid.update({ where: { id }, data: { status: 'LOST', lostReason: 'capture_failed' } });
+      await prisma.preBid.update({
+        where: { id },
+        data: { status: 'LOST', lostReason: 'capture_failed' },
+      });
     },
   });
-  check('direct cascade captures the leader', cascade.winnerPreBidId === idA && cascade.clearingPriceCents === 3050);
+  check(
+    'direct cascade captures the leader',
+    cascade.winnerPreBidId === idA && cascade.clearingPriceCents === 3050,
+  );
   check('one Stripe call for the intent', getCaptureCallCount(idA) === 1);
 
   const outcome = await reconcileCapturedCycle(cycleId, new Date());
-  check('reconcile settles from the record', outcome?.winnerPreBidId === idA && outcome.clearingPriceCents === 3050);
-  check('reconcile makes no new Stripe call', getCaptureCallCount(idA) === 1, `calls=${getCaptureCallCount(idA)}`);
+  check(
+    'reconcile settles from the record',
+    outcome?.winnerPreBidId === idA && outcome.clearingPriceCents === 3050,
+  );
+  check(
+    'reconcile makes no new Stripe call',
+    getCaptureCallCount(idA) === 1,
+    `calls=${getCaptureCallCount(idA)}`,
+  );
   const cycle = await prisma.auctionCycle.findUniqueOrThrow({ where: { id: cycleId } });
   check('cycle RESOLVED', cycle.status === 'RESOLVED', cycle.status);
 }
@@ -214,15 +250,26 @@ async function scenarioCrashBeforeCommit(): Promise<void> {
   const sweep1 = await resolveEndedCycles();
   check('poisoned settle resolves nothing yet', sweep1.resolved === 0 && sweep1.reconciled === 0);
   const mid = await prisma.auctionCycle.findUniqueOrThrow({ where: { id: cycleId } });
-  check('cycle left RESOLVING (never reopened after confirmed capture)', mid.status === 'RESOLVING', mid.status);
+  check(
+    'cycle left RESOLVING (never reopened after confirmed capture)',
+    mid.status === 'RESOLVING',
+    mid.status,
+  );
   check('charge happened exactly once', getCaptureCallCount(idA) === 1);
   const rows = await attempts(cycleId);
-  check('CAPTURED row on record', rows.some((r) => r.preBidId === idA && r.status === 'CAPTURED'));
+  check(
+    'CAPTURED row on record',
+    rows.some((r) => r.preBidId === idA && r.status === 'CAPTURED'),
+  );
 
   clearSettleFailures();
   const sweep2 = await resolveEndedCycles();
   check('later sweep reconciles', sweep2.reconciled === 1, JSON.stringify(sweep2));
-  check('still exactly one charge total', getCaptureCallCount(idA) === 1, `calls=${getCaptureCallCount(idA)}`);
+  check(
+    'still exactly one charge total',
+    getCaptureCallCount(idA) === 1,
+    `calls=${getCaptureCallCount(idA)}`,
+  );
   const done = await prisma.auctionCycle.findUniqueOrThrow({ where: { id: cycleId } });
   check('cycle RESOLVED at 3050', done.status === 'RESOLVED' && done.clearingPriceCents === 3050);
   const winner = await prisma.preBid.findUniqueOrThrow({ where: { id: idA } });
@@ -238,9 +285,16 @@ async function scenarioReplayAfterCommit(): Promise<void> {
   const before = await attempts(cycle.id);
   resetCaptureCallLog();
   const outcome = await reconcileCapturedCycle(cycle.id, new Date());
-  check('replay returns the stored outcome', outcome?.winnerPreBidId === cycle.winnerPreBidId && outcome.clearingPriceCents === 3050);
+  check(
+    'replay returns the stored outcome',
+    outcome?.winnerPreBidId === cycle.winnerPreBidId && outcome.clearingPriceCents === 3050,
+  );
   const after = await attempts(cycle.id);
-  check('no new attempt rows on replay', after.length === before.length, `${before.length} -> ${after.length}`);
+  check(
+    'no new attempt rows on replay',
+    after.length === before.length,
+    `${before.length} -> ${after.length}`,
+  );
   check('no Stripe calls on replay', getCaptureCallCount() === 0);
 }
 
@@ -298,7 +352,10 @@ async function scenarioAlreadyCaptured(): Promise<void> {
   resetCaptureCallLog();
 
   const outcome = await resolveOneCycle(cycleId, new Date());
-  check('recorded winner adopted', outcome?.winnerPreBidId === idA && outcome.clearingPriceCents === 3050);
+  check(
+    'recorded winner adopted',
+    outcome?.winnerPreBidId === idA && outcome.clearingPriceCents === 3050,
+  );
   check('Stripe never called again', getCaptureCallCount() === 0, `calls=${getCaptureCallCount()}`);
 }
 
@@ -327,7 +384,10 @@ async function scenarioRecoveryGuard(): Promise<void> {
 
   const sweep = await resolveEndedCycles();
   const cycle = await prisma.auctionCycle.findUniqueOrThrow({ where: { id: cycleId } });
-  check('ancient RESOLVING+capture reconciled, not reopened', cycle.status === 'RESOLVED' && sweep.reconciled === 1);
+  check(
+    'ancient RESOLVING+capture reconciled, not reopened',
+    cycle.status === 'RESOLVED' && sweep.reconciled === 1,
+  );
   check('recovery did not claim it as stuck', sweep.recovered === 0, JSON.stringify(sweep));
 }
 
@@ -356,7 +416,11 @@ async function main(): Promise<void> {
   await scenarioAlreadyCaptured();
   await scenarioRecoveryGuard();
   await cleanup();
-  console.log(failures === 0 ? '\nPASS: every crash point resumes from the ledger' : `\nFAILED: ${failures} check(s)`);
+  console.log(
+    failures === 0
+      ? '\nPASS: every crash point resumes from the ledger'
+      : `\nFAILED: ${failures} check(s)`,
+  );
   if (failures > 0) process.exitCode = 1;
 }
 

@@ -191,7 +191,10 @@ async function scenarioA(): Promise<void> {
     where: { cycleId, companyName: 'Beta' },
   });
   check('Beta LOST', betaRow.status === 'LOST');
-  check('Alpha WON', (await prisma.preBid.findUniqueOrThrow({ where: { id: alphaPb } })).status === 'WON');
+  check(
+    'Alpha WON',
+    (await prisma.preBid.findUniqueOrThrow({ where: { id: alphaPb } })).status === 'WON',
+  );
 }
 
 /**
@@ -216,7 +219,10 @@ async function scenarioB(): Promise<void> {
   check('sweep resolved >= 1 cycle', sweep.resolved >= 1, JSON.stringify(sweep));
 
   const oldCycle = await prisma.auctionCycle.findUniqueOrThrow({ where: { id: cycleId } });
-  check('old cycle RESOLVED with winner Alpha', oldCycle.status === 'RESOLVED' && oldCycle.winnerPreBidId === alphaPb);
+  check(
+    'old cycle RESOLVED with winner Alpha',
+    oldCycle.status === 'RESOLVED' && oldCycle.winnerPreBidId === alphaPb,
+  );
 
   const plot = await getPlot(plotId);
   check(
@@ -228,7 +234,10 @@ async function scenarioB(): Promise<void> {
   const nextCycle = await prisma.auctionCycle.findUniqueOrThrow({
     where: { id: plot.currentCycleId! },
   });
-  check('next cycle OPEN, ended in the future', nextCycle.status === 'OPEN' && nextCycle.endAt.getTime() > Date.now());
+  check(
+    'next cycle OPEN, ended in the future',
+    nextCycle.status === 'OPEN' && nextCycle.endAt.getTime() > Date.now(),
+  );
 
   const deltaRow = await prisma.preBid.findUniqueOrThrow({ where: { id: deltaPb } });
   check(
@@ -237,7 +246,10 @@ async function scenarioB(): Promise<void> {
     `status=${deltaRow.status} reason=${deltaRow.lostReason}`,
   );
   const gammaRow = await prisma.preBid.findUniqueOrThrow({ where: { id: gammaPb } });
-  check('Gamma still ACTIVE in next cycle', gammaRow.status === 'ACTIVE' && gammaRow.cycleId === nextCycle.id);
+  check(
+    'Gamma still ACTIVE in next cycle',
+    gammaRow.status === 'ACTIVE' && gammaRow.cycleId === nextCycle.id,
+  );
 
   // Single surviving pre-bid -> opening price = MID floor (500).
   check(
@@ -246,7 +258,7 @@ async function scenarioB(): Promise<void> {
     `price=${nextCycle.currentPriceCents}`,
   );
   check(
-    "core Model A invariant: Alpha (paid winner of the OLD cycle) remains the tenant display; Gamma is only auction-leading the NEW cycle, not yet a tenant",
+    'core Model A invariant: Alpha (paid winner of the OLD cycle) remains the tenant display; Gamma is only auction-leading the NEW cycle, not yet a tenant',
     plot.tenantCompanyName === 'Alpha' && plot.currentLeaderPreBidId === gammaPb,
     `tenant=${plot.tenantCompanyName} leaderPreBidId=${plot.currentLeaderPreBidId}`,
   );
@@ -298,7 +310,9 @@ async function scenarioC(): Promise<void> {
  * must never be evicted by a failed/empty auction on the NEXT lease.
  */
 async function scenarioD(): Promise<void> {
-  console.log('D. all captures fail: no winner, IDLE, standing tenant from a prior lease is NOT evicted');
+  console.log(
+    'D. all captures fail: no winner, IDLE, standing tenant from a prior lease is NOT evicted',
+  );
   const plotId = await makePlot('proof-2-3-d');
   // Simulate a tenant from an already-settled PRIOR lease — this scenario's
   // failing cycle is for the NEXT lease, and must not touch it.
@@ -329,7 +343,9 @@ async function scenarioD(): Promise<void> {
   const cycle = await prisma.auctionCycle.findUniqueOrThrow({ where: { id: cycleId } });
   check(
     'cycle RESOLVED with no winner and no clearing price',
-    cycle.status === 'RESOLVED' && cycle.winnerPreBidId === null && cycle.clearingPriceCents === null,
+    cycle.status === 'RESOLVED' &&
+      cycle.winnerPreBidId === null &&
+      cycle.clearingPriceCents === null,
     `status=${cycle.status} winner=${cycle.winnerPreBidId} price=${cycle.clearingPriceCents}`,
   );
   const plot = await getPlot(plotId);
@@ -358,9 +374,7 @@ async function scenarioE(): Promise<void> {
   await addPreBid(cycleId, plotId, alpha, 'Alpha', 2000);
   await addPreBid(cycleId, plotId, beta, 'Beta', 1500);
 
-  const sweeps = await Promise.all(
-    Array.from({ length: 5 }, () => resolveEndedCycles()),
-  );
+  const sweeps = await Promise.all(Array.from({ length: 5 }, () => resolveEndedCycles()));
   const totalResolved = sweeps.reduce((s, r) => s + r.resolved, 0);
   check('exactly one sweep reports the resolution', totalResolved === 1, `total=${totalResolved}`);
 
@@ -398,7 +412,10 @@ async function scenarioF(): Promise<void> {
   check('recovered >= 1 stuck cycle', sweep.recovered >= 1, JSON.stringify(sweep));
   const cycle = await prisma.auctionCycle.findUniqueOrThrow({ where: { id: cycleId } });
   check('stuck cycle recovered and resolved in one sweep', cycle.status === 'RESOLVED');
-  check('winnerless resolution recorded', cycle.winnerPreBidId === null && cycle.clearingPriceCents === null);
+  check(
+    'winnerless resolution recorded',
+    cycle.winnerPreBidId === null && cycle.clearingPriceCents === null,
+  );
   const plot = await getPlot(plotId);
   check(
     'recovered cycle leaves plot IDLE, no tenant (none existed before)',
@@ -429,7 +446,10 @@ async function scenarioG(): Promise<void> {
       where: { status: 'OPEN', endAt: { lte: sweepNow } },
       select: { id: true },
     });
-    check('G1 sweep read sees the expired cycle', eligible.some((c) => c.id === cycleId));
+    check(
+      'G1 sweep read sees the expired cycle',
+      eligible.some((c) => c.id === cycleId),
+    );
 
     // ...but a late bid received inside the soft-close window extends it
     // first (same engine call the bid route makes, under the plot lock).
@@ -441,7 +461,10 @@ async function scenarioG(): Promise<void> {
       check('G1 late bid extends the window', softClose.extended === true);
       return softClose.newEndAt;
     });
-    check('G1 extension moves endAt past the sweep timestamp', extendedEndAt.getTime() > sweepNow.getTime());
+    check(
+      'G1 extension moves endAt past the sweep timestamp',
+      extendedEndAt.getTime() > sweepNow.getTime(),
+    );
 
     // Worker claim with the STALE sweep timestamp must refuse the cycle.
     const outcome = await resolveOneCycle(cycleId, sweepNow);
@@ -454,13 +477,19 @@ async function scenarioG(): Promise<void> {
       cycle.endAt.getTime() === extendedEndAt.getTime(),
       `endAt=${cycle.endAt.toISOString()}`,
     );
-    check('G1 no settlement recorded', cycle.winnerPreBidId === null && cycle.clearingPriceCents === null);
+    check(
+      'G1 no settlement recorded',
+      cycle.winnerPreBidId === null && cycle.clearingPriceCents === null,
+    );
     const pb = await prisma.preBid.findUniqueOrThrow({ where: { id: pbId } });
     check('G1 candidate still ACTIVE', pb.status === 'ACTIVE');
     const ticks = await prisma.bid.count({ where: { cycleId } });
     check('G1 no ledger ticks written', ticks === 0, `ticks=${ticks}`);
     const plot = await getPlot(plotId);
-    check('G1 plot still LIVE on the same cycle', plot.status === 'LIVE' && plot.currentCycleId === cycleId);
+    check(
+      'G1 plot still LIVE on the same cycle',
+      plot.status === 'LIVE' && plot.currentCycleId === cycleId,
+    );
   }
 
   // G2: extension lands AFTER the claim but BEFORE the worker's main tx
@@ -523,7 +552,10 @@ async function scenarioG(): Promise<void> {
       cycle.endAt.getTime() === extendedEndAt.getTime(),
       `endAt=${cycle.endAt.toISOString()}`,
     );
-    check('G2 no settlement recorded', cycle.winnerPreBidId === null && cycle.clearingPriceCents === null);
+    check(
+      'G2 no settlement recorded',
+      cycle.winnerPreBidId === null && cycle.clearingPriceCents === null,
+    );
     const pb = await prisma.preBid.findUniqueOrThrow({ where: { id: pbId } });
     check('G2 candidate still ACTIVE', pb.status === 'ACTIVE');
     const ticks = await prisma.bid.count({ where: { cycleId } });
@@ -557,7 +589,9 @@ async function main(): Promise<void> {
   await scenarioF();
   await scenarioG();
   await cleanupProofPlots();
-  console.log(failures === 0 ? '\nPASS: all 2.3 proof scenarios passed' : `\nFAILED: ${failures} check(s)`);
+  console.log(
+    failures === 0 ? '\nPASS: all 2.3 proof scenarios passed' : `\nFAILED: ${failures} check(s)`,
+  );
   if (failures > 0) process.exitCode = 1;
 }
 

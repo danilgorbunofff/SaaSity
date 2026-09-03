@@ -1,7 +1,7 @@
 # Phase 0.3 — Seed & Read API
 
 **Milestone:** [0 · Scaffold & Data Layer](../PLAN.md) · **Prev:** [0.2 Database & Prisma](phase-02-database-and-prisma.md) · **Next:** [Milestone 1](../../01-3d-city/PLAN.md)
-**Status:** ✅ Done (2026-09-01) · **Estimate:** ~1 day
+**Status:** 🟡 In progress (seed + read API + privacy tests done; "deployed" box open — no deployment exists) · **Estimate:** ~1 day
 
 ## Goal
 
@@ -41,11 +41,11 @@ The 49-plot grid exists in the database, provably covers the 10x10 plane without
 
 ## Exit criteria
 
-- [ ] Fresh `migrate + seed` reproduces the exact grid anywhere, every plot `IDLE`
-- [ ] Integrity check committed and part of the seed run
-- [ ] Public plots + bid-ledger APIs deployed and consumed by the placeholder page
-- [ ] `maxBidCents` and non-leader bidder data confirmed structurally absent from every response (asserted by a test, not just documented)
-- [ ] Realtime transport decision from phase 0.2 carried forward unchanged — not re-litigated here or in M2
+- [x] Fresh `migrate + seed` reproduces the exact grid anywhere, every plot `IDLE` — CI runs `migrate deploy` + `db:seed` on a fresh database every push; `tests/city/seed-check.test.ts` pins the shape
+- [x] Integrity check committed and part of the seed run — `checkGridIntegrity` in `src/lib/grid-integrity.ts` aborts `prisma/seed.ts` on failure, not a side script
+- [ ] Public plots + bid-ledger APIs deployed and consumed by the placeholder page — consumed by the city page locally, but "deployed" is still open (no deployment exists — Part 7 `preview-proof-overclaim`)
+- [x] `maxBidCents` and non-leader bidder data confirmed structurally absent from every response (asserted by a test, not just documented) — `tests/server/serializers.test.ts` (REST shapes) + `tests/realtime/bus.test.ts` (event payloads), both in CI
+- [x] Realtime transport decision from phase 0.2 carried forward unchanged — not re-litigated here or in M2 — SSE + shared serializer, implemented in 2.4 per 0.2's binding decision
 
 ## Out of scope / notes
 

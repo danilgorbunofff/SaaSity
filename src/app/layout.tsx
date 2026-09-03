@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 
@@ -16,6 +16,10 @@ export const metadata: Metadata = {
   title: 'SaaSity',
   description:
     'A 10x10 isometric cyber city where SaaS startups bid for time-limited billboard leases.',
+};
+
+export const viewport: Viewport = {
+  themeColor: '#050508',
 };
 
 export default function RootLayout({ children }: LayoutProps<'/'>) {

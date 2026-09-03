@@ -21,7 +21,7 @@ import { useRef, useSyncExternalStore } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import { AdditiveBlending, type Mesh, type MeshStandardMaterial } from 'three';
-import { TIERS, formatPrice } from '@/lib/tiers';
+import { TIERS, formatPrice, formatMrrBadge } from '@/lib/tiers';
 import { TIER_MESH } from '@/components/city/TierMeshes';
 import { NEON, PERF_MINIMAL } from '@/lib/city/config';
 import { getTick, getTickNow, subscribeTick } from '@/lib/city/shared-tick';
@@ -106,7 +106,7 @@ export function SkinEdgeGlow({
 
   return (
     <group>
-      {/* roof-edge strip: sits proud of the tower trim (+0.05 wider, top face
+      {/* roof-edge strip: sits proud of the tower trim (+0.06 wider, top face
           above the trim plane) so no two faces are coplanar (Part 5
           selection-feedback z-fighting fix). */}
       <mesh position={[0, height + 0.005, 0]}>
@@ -120,13 +120,18 @@ export function SkinEdgeGlow({
         />
       </mesh>
       {isLive &&
-        ([
-          [size / 2, size / 2],
-          [-size / 2, -size / 2],
-        ] as const).map(([hx, hz], i) => (
+        (
+          [
+            [size / 2, size / 2],
+            [-size / 2, -size / 2],
+          ] as const
+        ).map(([hx, hz], i) => (
           // Offset 0.025 outward so the strip faces are never coplanar with
           // the tower sides (Part 5 z-fighting fix — same class as the roof).
-          <mesh key={i} position={[hx + Math.sign(hx) * 0.025, height / 2, hz + Math.sign(hz) * 0.025]}>
+          <mesh
+            key={i}
+            position={[hx + Math.sign(hx) * 0.025, height / 2, hz + Math.sign(hz) * 0.025]}
+          >
             <boxGeometry args={[0.035, height * 0.9, 0.035]} />
             <meshStandardMaterial
               color="#0a1418"
@@ -282,7 +287,17 @@ function Beacon({ baseY, height, outbid }: { baseY: number; height: number; outb
 type MeshBasicMaterialImpl = import('three').MeshBasicMaterial;
 
 /** Ground aura ring pulsing on the terrace surface (plinth Y, not world 0). */
-function AuraRing({ size, y, tier, outbid }: { size: number; y: number; tier: 'OUTER' | 'MID' | 'CORE'; outbid: boolean }) {
+function AuraRing({
+  size,
+  y,
+  tier,
+  outbid,
+}: {
+  size: number;
+  y: number;
+  tier: 'OUTER' | 'MID' | 'CORE';
+  outbid: boolean;
+}) {
   const ref = useRef<Mesh>(null);
   const r = clampRingRadius(tier, size / 2 + 0.18, 0.1);
   const speed = outbid ? 3.0 : 1.4;
@@ -359,7 +374,10 @@ function RoofBadge({
           color: outbid ? '#1a1000' : '#001318',
           background: outbid ? NEON.amber : NEON.cyan,
           boxShadow: `0 0 12px ${outbid ? NEON.amber : NEON.cyan}`,
-          animation: outbid && !reduceMotion ? 'city-outbid-flash 0.8s steps(2, jump-none) infinite' : undefined,
+          animation:
+            outbid && !reduceMotion
+              ? 'city-outbid-flash 0.8s steps(2, jump-none) infinite'
+              : undefined,
         }}
       >
         {text}
@@ -410,6 +428,7 @@ function TenantBillboard({
         }}
       >
         <div
+          dir="auto"
           style={{
             fontSize: 11,
             fontWeight: 700,
@@ -421,9 +440,9 @@ function TenantBillboard({
         >
           {name}
         </div>
-        {mrrText ? (
+        {formatMrrBadge(mrrText) ? (
           <div style={{ marginTop: 1, fontSize: 8, color: NEON.amber, whiteSpace: 'nowrap' }}>
-            {mrrText}
+            {formatMrrBadge(mrrText)}
           </div>
         ) : null}
       </div>
@@ -453,7 +472,16 @@ export interface PlotSkinsProps {
   idlePulse?: boolean;
 }
 
-export function PlotSkins({ plot, height, baseY, ownedLeading, outbid, hovered, selected, idlePulse }: PlotSkinsProps) {
+export function PlotSkins({
+  plot,
+  height,
+  baseY,
+  ownedLeading,
+  outbid,
+  hovered,
+  selected,
+  idlePulse,
+}: PlotSkinsProps) {
   const closingSoon = useClosingSoon(plot.endAt);
   const showPersonal = ownedLeading || outbid;
   const badgeY = baseY + height + (plot.tier === 'CORE' ? 2.6 : 1.0);
@@ -493,7 +521,12 @@ export function PlotSkins({ plot, height, baseY, ownedLeading, outbid, hovered, 
       {showPersonal && !PERF_MINIMAL && (
         <group>
           <Beacon baseY={baseY} height={height} outbid={outbid} />
-          <AuraRing size={TIER_MESH[plot.tier].size} y={baseY + 0.03} tier={plot.tier} outbid={outbid} />
+          <AuraRing
+            size={TIER_MESH[plot.tier].size}
+            y={baseY + 0.03}
+            tier={plot.tier}
+            outbid={outbid}
+          />
           <RoofBadge tier={plot.tier} endAt={plot.endAt} outbid={outbid} y={badgeY} />
         </group>
       )}

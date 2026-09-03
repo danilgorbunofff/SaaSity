@@ -22,6 +22,9 @@ already exist locally.
       `BIDDER_COOKIE_SECRET` / `WORKER_SECRET` / `MOCK_PAYMENTS` set as bare
       env vars (i.e. exactly how CI provides them, not via a dotfile) —
       same result.
+      (Suite has since grown to 138/138 as Parts 3–5 added tests; the
+      clean-checkout property is enforced continuously by CI, not by the
+      number.)
 - [x] Document the supported Node and npm versions. — `package.json` now
       declares `"engines": { "node": ">=20.9.0", "npm": ">=10" }`, matching
       `next@16`'s own declared `engines.node` (`>=20.9.0`) and
@@ -35,7 +38,8 @@ already exist locally.
       an ephemeral `postgres:16-alpine` service container. Steps: checkout →
       setup Node from `.nvmrc` → `npm ci` → create shadow DB → schema-drift
       check → `prisma migrate deploy` → `db:seed` → `tsc --noEmit` →
-      `npm run lint` → `npm test` → `npm run build`. Validated two ways
+      `format:check` (added by Part 7) → `npm run lint` → `npm test` →
+      `npm run build`. Validated two ways
       before relying on it: `actionlint` reports zero issues, and every step
       was dry-run locally with the exact env-var-only setup CI uses (no
       `.env` file) against freshly-created empty databases — all passed.
@@ -53,7 +57,9 @@ untracked.
 - [x] Reconcile `schema.prisma` against the complete ordered migration
       history. — Verified with `npx prisma migrate diff --from-migrations
       ./prisma/migrations --to-schema prisma/schema.prisma --exit-code` →
-      `No difference detected.` (exit 0). Replaying all 6 migrations from
+      `No difference detected.` (exit 0). Needs `SHADOW_DATABASE_URL` set
+      (as CI's workflow does) — without it the command errors instead of
+      checking. Replaying all migrations from
       empty reproduces `schema.prisma` exactly.
 - [x] Review defaults/backfills for non-empty production tables. — Read
       every `ALTER TABLE` in the 4 newer migrations:
@@ -67,9 +73,12 @@ untracked.
       `tenant*` columns so every existing plot lands on "no confirmed tenant
       yet", which is the correct Model A starting state. Confirmed all of
       this by executing it, not just reading it (next item).
-- [x] Commit every migration required by the current schema. — All 6
-      migrations are committed (`e0ad13c`); `prisma migrate status` reports
+- [x] Commit every migration required by the current schema. — All 9
+      migrations are committed; `prisma migrate status` reports
       "Database schema is up to date!" against the real dev DB.
+      (Count grew from 6 → 7 → 9 as Parts 3/4 landed their own
+      migrations; the drift check below is what actually enforces this,
+      not the number.)
 - [x] Apply the history to an empty database. — `prisma migrate diff
       --from-migrations` (above) does this on every invocation via a scratch
       shadow DB; also re-verified directly with a plain `prisma migrate
@@ -252,7 +261,8 @@ cookies are returned without renewal.
       since-rotated-away `BIDDER_COOKIE_SECRET` is rejected; the same cookie
       still parses under the key it was actually signed with), 6
       refresh-threshold cases, plus a valid-round-trip and an age-math case.
-      All 15 pass (`npm test` → 67/67 total, up from 52).
+      All 15 pass (exactly 15 `test(` blocks — recounted during Part 7
+      verification; suite total was 67/67 at the time, 138/138 now).
 - [x] Document the user consequence of clearing cookies or changing
       devices. — This was previously only written in an internal
       architecture-planning doc
@@ -325,10 +335,10 @@ cookies are returned without renewal.
       column untouched (no partial write). Script cleans up its own
       synthetic `zz-proof-*` rows; verified zero residue after the run.
       Full suite re-verified after this change: `tsc --noEmit` clean,
-      `npm run lint` clean, `npm test` 67/67, `npm run build` succeeds,
+      `npm run lint` clean, `npm test` 67/67 at the time (138/138 at Part 7 verification), `npm run build` succeeds,
       and a schema-drift check (`prisma migrate diff --exit-code` against
-      a scratch shadow DB) reports "No difference detected" — the 7
-      migrations on disk exactly reconstruct `schema.prisma`.
+      a scratch shadow DB) reports "No difference detected" — the 9 (at the
+      time, 7) migrations on disk exactly reconstruct `schema.prisma`.
 
 ## Additional foundation cleanup
 
@@ -389,4 +399,30 @@ cookies are returned without renewal.
       concrete example: this pass's `deepmerge-ts`/`mysql2` overrides,
       above), and an explicit statement that no Renovate/Dependabot
       automation exists yet (manual updates only, for now).
+
+## Part 7 strict re-verification (2026-09-03) — ✅ all substance holds
+
+Every checkable claim above was re-executed live against the current
+tree, not just re-read: `tsc --noEmit` clean, `npm run lint` clean
+(`--max-warnings=0`), `npm test` **138/138** (growth from 67 is Parts
+3–5 coverage, not regressions), `npm audit` **0 vulnerabilities**,
+`prisma migrate diff --exit-code` → **"No difference detected"** (all 9
+migrations, fresh shadow DB created and dropped for the check),
+`prisma migrate status` → **"Database schema is up to date!"**,
+`git ls-files prisma/migrations` ≡ disk (nothing untracked), cookie
+tests recounted at exactly 15 `test(` blocks, seed lint + README /
+`.env.example` / `vercel.json` / `resolve-cron.yml` / `deployment.md` /
+`BidModal` disclosure / phase-01 `Correction` notes all confirmed
+present. Stale numbers left by later passes (migration/test counts, the
+new CI format-check step, the `SHADOW_DATABASE_URL` prerequisite) were
+corrected inline above.
+
+Two honest caveats, neither a Part 2 regression: (1) the working tree
+is currently dirty again (60+ modified files + 9 new untracked test/
+helper files from the Parts 3–5 remediation passes sitting on top of
+`1bbe913`) — the "clean `git status` / fresh-clone reproduces the tree"
+property must be re-proved once after the final commit, same as last
+time; (2) `uncommitted-m2` and `delivery-pipeline-unproven` remain
+accurately marked partial — no push/PR and no connected Vercel account
+yet, both still your follow-ups.
 

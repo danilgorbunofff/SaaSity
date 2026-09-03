@@ -11,15 +11,7 @@ import { HILL, NEON, SCENE } from '@/lib/city/config';
  * z-fight where terraces meet.
  */
 
-function TerraceSlab({
-  size,
-  topY,
-  color,
-}: {
-  size: number;
-  topY: number;
-  color: string;
-}) {
+function TerraceSlab({ size, topY, color }: { size: number; topY: number; color: string }) {
   const height = topY + HILL.plinthThickness + HILL.overlap;
   return (
     <mesh position={[0, topY - height / 2, 0]}>
@@ -85,20 +77,26 @@ export function TerracedHill({ showGrid }: { showGrid: boolean }) {
       <TerraceSlab size={HILL.groundSize} topY={HILL.outerY} color="#0a0d14" />
 
       {/* Step 2: 6x6 mid platform, top at Y = +2 */}
-      <RetainingWall size={HILL.midSize} topY={HILL.midY} bottomY={HILL.outerY} trimColor={NEON.cyan} />
+      <RetainingWall
+        size={HILL.midSize}
+        topY={HILL.midY}
+        bottomY={HILL.outerY}
+        trimColor={NEON.cyan}
+      />
       <TerraceSlab size={HILL.midSize} topY={HILL.midY} color="#0b0e16" />
 
       {/* Step 3: 4x4 core summit, top at Y = +5 */}
-      <RetainingWall size={HILL.coreSize} topY={HILL.coreY} bottomY={HILL.midY} trimColor={NEON.magenta} />
+      <RetainingWall
+        size={HILL.coreSize}
+        topY={HILL.coreY}
+        bottomY={HILL.midY}
+        trimColor={NEON.magenta}
+      />
       <TerraceSlab size={HILL.coreSize} topY={HILL.coreY} color="#0c0f18" />
 
       {/* Dev/staging 10x10 grid decal on the outer plinth top (kept for 1.3) */}
       {showGrid ? (
-        <Grid
-          position={[0, HILL.outerY + HILL.decalLift, 0]}
-          args={[10, 10]}
-          {...gridArgs}
-        />
+        <Grid position={[0, HILL.outerY + HILL.decalLift, 0]} args={[10, 10]} {...gridArgs} />
       ) : null}
     </group>
   );

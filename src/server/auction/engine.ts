@@ -259,7 +259,14 @@ export async function resolveCycle(
 export async function activateTenant(
   tx: Tx,
   plotId: string,
-  winner: { id: string; companyName: string; tagline: string | null; targetUrl: string; twitterHandle: string; mrrText: string | null },
+  winner: {
+    id: string;
+    companyName: string;
+    tagline: string | null;
+    targetUrl: string;
+    twitterHandle: string;
+    mrrText: string | null;
+  },
   now: Date,
 ): Promise<void> {
   await tx.plot.update({
@@ -473,7 +480,10 @@ export interface SoftCloseResult {
  */
 export async function applySoftClose(
   tx: Tx,
-  cycle: Pick<AuctionCycle, 'id' | 'endAt' | 'startedAt' | 'durationMinutes' | 'softCloseExtensions'>,
+  cycle: Pick<
+    AuctionCycle,
+    'id' | 'endAt' | 'startedAt' | 'durationMinutes' | 'softCloseExtensions'
+  >,
   receivedAt: Date,
 ): Promise<SoftCloseResult> {
   const windowMs = SOFT_CLOSE_MINUTES * 60 * 1000;

@@ -31,11 +31,7 @@
 import { prisma } from '@/server/prisma';
 import { serializePlot } from '@/server/serializers';
 import { subscribe, eventKeyOf, type RealtimeEvent } from '@/server/realtime/bus';
-import {
-  readOutboxSince,
-  readOutboxHighWatermark,
-  OUTBOX_POLL_MS,
-} from '@/server/realtime/outbox';
+import { readOutboxSince, readOutboxHighWatermark, OUTBOX_POLL_MS } from '@/server/realtime/outbox';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';

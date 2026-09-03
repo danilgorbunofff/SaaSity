@@ -59,8 +59,15 @@ const MAX_RESYNC_FAILURES = 3;
 async function fullResync(reason: string): Promise<void> {
   try {
     const snap = await fetchCitySnapshot();
-    const { setPlots, setMyPositions, setMockResolveEnabled, markFetched, markSynced, setError, error } =
-      useCityStore.getState();
+    const {
+      setPlots,
+      setMyPositions,
+      setMockResolveEnabled,
+      markFetched,
+      markSynced,
+      setError,
+      error,
+    } = useCityStore.getState();
     // Positions BEFORE plots: setPlots derives snapshot outbid from the
     // current projection, so the projection must already be fresh.
     setMyPositions(snap.myPositions);
@@ -242,7 +249,8 @@ function assertEventShape(event: unknown): asserts event is RealtimeEventDto {
   if (e.type !== 'bid:placed' && e.type !== 'cycle:extended' && e.type !== 'cycle:resolved') {
     throw new Error(`unknown event type: ${String(e.type)}`);
   }
-  if (typeof e.plotId !== 'string' || e.plotId.length === 0) throw new Error('frame without plotId');
+  if (typeof e.plotId !== 'string' || e.plotId.length === 0)
+    throw new Error('frame without plotId');
 }
 
 /** A healthy frame: reset the failure counter, mark stream + data fresh. */

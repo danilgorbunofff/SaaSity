@@ -207,12 +207,30 @@ unit tests; tsc + eslint clean.*
 - [x] No catch block silently converts a failed settlement into success.
 
 *Gate run 2026-09-03 (Windows + Node 24, saasity_dev): concurrency-bids
-HTTP PASS (one leader, second-price convergence); worker proof A–H PASS
+HTTP PASS (one leader, second-price convergence); worker proof A-G PASS
 (E: 5 concurrent sweeps settle exactly once); queued-max, soft-close
 (incl. G worker-overlap), prebid-states 16/16, authorize-attach 13/13,
-settlement-crash P1–P7 PASS; 75/75 unit tests; tsc clean; eslint zero
+settlement-crash P1-P7 PASS; 75/75 unit tests at the time (suite has since
+grown — see the strict re-verification note below); tsc clean; eslint zero
 warnings; `npm run build` green. Catch audit: authorize failures →
 EXPIRED/402, capture failures → FAILED_*/abort-or-fallback, sweep
 failures → logged + continued, releases → RELEASE_FAILED + retried —
 nothing converts failure into success.*
+
+*Strict re-verification 2026-09-03 (second pass, Windows + Node 24,
+saasity_dev, prod `next build && next start -p 3457` for the HTTP proofs):
+every checkbox re-checked against the code and re-executed, not trusted
+from the notes above. tsc clean; eslint zero warnings; 138/138 unit tests
+pass; worker proof A-G PASS; settlement-crash P1-P7 PASS; authorize-attach
+PASS; queued-max PASS; soft-close ALL PASS; prebid-states 16/16 PASS over
+HTTP; concurrency-bids + concurrency-claims PASS over HTTP (1 claim wins /
+7 x 409; one leader, second-price convergence). Catch audit re-done
+line-by-line (worker.ts 551/563/607/628/653, finalize.ts 248/260/505/550,
+cron + plots routes): every catch expires, aborts, retries, or logs —
+nothing converts failure into success. cron-staleness.test.ts present;
+deployment.md section 3 documents the 3-layer schedule. Proof-touched
+plots (mid-03, mid-05) reset to IDLE with zero leftover cycles. Two doc
+nits fixed in this pass: "A-H" was always A-G (seven scenarios exist),
+and the 75/75 count was the suite size at fix time. No code changes were
+needed — all eight findings check out as implemented and green.*
 

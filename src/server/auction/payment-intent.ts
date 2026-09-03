@@ -64,8 +64,15 @@ function isUniqueConstraintViolationOn(err: unknown, field: string): boolean {
       const kind = (cause as Record<string, unknown>)['kind'];
       const constraint = (cause as Record<string, unknown>)['constraint'];
       const index =
-        constraint && typeof constraint === 'object' ? (constraint as Record<string, unknown>)['index'] : undefined;
-      if (kind === 'UniqueConstraintViolation' && typeof index === 'string' && index.includes(field)) return true;
+        constraint && typeof constraint === 'object'
+          ? (constraint as Record<string, unknown>)['index']
+          : undefined;
+      if (
+        kind === 'UniqueConstraintViolation' &&
+        typeof index === 'string' &&
+        index.includes(field)
+      )
+        return true;
     }
   }
 

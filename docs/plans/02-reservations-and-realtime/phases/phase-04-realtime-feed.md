@@ -1,7 +1,7 @@
 # Phase 2.4 — Realtime Feed
 
 **Milestone:** [2 · Auctions & Realtime](../PLAN.md) · **Prev:** [2.3 Cycle Resolution Worker](phase-03-expiry-sweep.md) · **Next:** [2.5 Mock Cycle Resolution & Full Loop](phase-05-mock-sale-states.md)
-**Status:** ✅ Done · **Estimate:** ~1.5–2 days
+**Status:** 🟡 In progress (feed implemented + locally verified; preview box reopened — see Exit criteria) · **Estimate:** ~1.5–2 days
 
 > **Transport decision (reference only — decided in phase 0.2, implemented here):**
 > 0.2 chose the default: **Neon Postgres + SSE with an in-process event bus**
@@ -9,8 +9,8 @@
 > rejected per 0.2's guidance — 49 plots don't need managed fan-out. See
 > [phase 0.2, step 1](../../00-scaffold-and-data-layer/phases/phase-02-database-and-prisma.md).
 
-**Evidence (verified 2026-09-02):** bus unit tests 5/5 (`tests/realtime/bus.test.ts`),
-full suite 49/49, `next build` clean. E2E against prod server on :3457 —
+**Evidence (verified 2026-09-02, LOCAL-ONLY):** bus unit tests 5/5 (`tests/realtime/bus.test.ts`),
+full suite 49/49, `next build` clean. E2E against a local prod-mode server on :3457 —
 `bid:placed` (cross-client, <1s), `cycle:extended` (soft-close fired by a real
 second-bidder bid), `cycle:resolved` (winner brand + clearing price via worker
 run), all frames observed on a live `/api/events` stream with correct `id: N`
@@ -18,6 +18,8 @@ seq lines; payload shape checked against the 0.3 privacy rule (`maxBidCents`
 absent, leader-only brand). 15 rapid reconnects left zero leaked TCP
 connections; server seq resets on reconnect and the client re-anchors from the
 snapshot (design behavior, documented in `src/lib/city/realtime.ts`).
+No Vercel preview or production evidence exists yet — see the reopened exit
+box below (Part 7 `preview-proof-overclaim`).
 
 ## Goal
 
@@ -56,8 +58,8 @@ Every open browser reflects price ticks, leader changes, soft-close extensions, 
 ## Exit criteria
 
 - [x] Note at top of this file records which transport 0.2 chose (SSE or Supabase) — reference, not a new decision
-- [x] All three event types (`bid:placed`, `cycle:extended`, `cycle:resolved`) demonstrated sub-second in prod preview
-- [x] No memory/listener leaks across 10 reconnect cycles
+- [ ] All three event types (`bid:placed`, `cycle:extended`, `cycle:resolved`) demonstrated sub-second in prod preview — REOPENED (Part 7 `preview-proof-overclaim`): demonstrated on a local prod-mode server only; localhost timing must not be reused as serverless proof. Re-verify on the preview deployment across separate function instances and record URL + commit SHA + date + scenario + result here
+- [x] No memory/listener leaks across 15 rapid reconnect cycles (matches the evidence block above; corrected from "10" during the Part 7 strict re-verification)
 
 ## Out of scope / notes
 

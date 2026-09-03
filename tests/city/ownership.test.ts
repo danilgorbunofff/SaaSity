@@ -27,7 +27,9 @@ function plot(overrides: Partial<PlotDto> & Pick<PlotDto, 'id' | 'status'>): Plo
   };
 }
 
-function pos(overrides: Partial<OwnerPosition> & Pick<OwnerPosition, 'preBidId' | 'plotId'>): OwnerPosition {
+function pos(
+  overrides: Partial<OwnerPosition> & Pick<OwnerPosition, 'preBidId' | 'plotId'>,
+): OwnerPosition {
   return { cycleId: null, status: 'ACTIVE', ...overrides };
 }
 
@@ -38,11 +40,27 @@ const BID_C = 'pb-c';
 test('isOwnedLeading truth table', () => {
   const mine = new Set([BID_A]);
 
-  assert.equal(isOwnedLeading(plot({ id: 'p1', status: 'LIVE', currentLeaderPreBidId: BID_A }), mine, BID_A), true);
-  assert.equal(isOwnedLeading(plot({ id: 'p2', status: 'IDLE', currentLeaderPreBidId: BID_A }), mine, BID_A), false);
-  assert.equal(isOwnedLeading(plot({ id: 'p3', status: 'LIVE', currentLeaderPreBidId: BID_B }), mine, BID_B), false);
+  assert.equal(
+    isOwnedLeading(plot({ id: 'p1', status: 'LIVE', currentLeaderPreBidId: BID_A }), mine, BID_A),
+    true,
+  );
+  assert.equal(
+    isOwnedLeading(plot({ id: 'p2', status: 'IDLE', currentLeaderPreBidId: BID_A }), mine, BID_A),
+    false,
+  );
+  assert.equal(
+    isOwnedLeading(plot({ id: 'p3', status: 'LIVE', currentLeaderPreBidId: BID_B }), mine, BID_B),
+    false,
+  );
   assert.equal(isOwnedLeading(plot({ id: 'p4', status: 'LIVE' }), mine, undefined), false);
-  assert.equal(isOwnedLeading(plot({ id: 'p5', status: 'LIVE', currentLeaderPreBidId: BID_A }), mine, undefined), false);
+  assert.equal(
+    isOwnedLeading(
+      plot({ id: 'p5', status: 'LIVE', currentLeaderPreBidId: BID_A }),
+      mine,
+      undefined,
+    ),
+    false,
+  );
   assert.equal(isOwnedLeading(plot({ id: 'p6', status: 'LIVE' }), new Set(), undefined), false);
 });
 
@@ -128,7 +146,9 @@ test('deriveOutbidFromPositions: ACTIVE row on the current cycle, rival leads â†
     ['p1', plot({ id: 'p1', status: 'LIVE', cycleId: 'c1', currentLeaderPreBidId: BID_B })],
   ]);
   // I never observed the flip â€” the snapshot alone reconstructs it.
-  const out = deriveOutbidFromPositions(plots, [pos({ preBidId: BID_A, plotId: 'p1', cycleId: 'c1' })]);
+  const out = deriveOutbidFromPositions(plots, [
+    pos({ preBidId: BID_A, plotId: 'p1', cycleId: 'c1' }),
+  ]);
   assert.ok(out.has('p1'));
 });
 
@@ -138,7 +158,10 @@ test('deriveOutbidFromPositions: leading, won, leaderless, stale-cycle, and idle
     ['won', plot({ id: 'won', status: 'IDLE', cycleId: undefined })],
     ['empty', plot({ id: 'empty', status: 'LIVE', cycleId: 'c1' })],
     ['stale', plot({ id: 'stale', status: 'LIVE', cycleId: 'c2', currentLeaderPreBidId: BID_B })],
-    ['idle', plot({ id: 'idle', status: 'IDLE', cycleId: undefined, currentLeaderPreBidId: undefined })],
+    [
+      'idle',
+      plot({ id: 'idle', status: 'IDLE', cycleId: undefined, currentLeaderPreBidId: undefined }),
+    ],
   ]);
   const positions = [
     pos({ preBidId: BID_A, plotId: 'lead', cycleId: 'c1' }),

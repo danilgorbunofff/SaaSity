@@ -4,11 +4,7 @@
  */
 import assert from 'node:assert/strict';
 import { test, afterEach } from 'node:test';
-import {
-  IDLE_PULSE_MS,
-  clearIdlePulseTimerForTests,
-  useCityStore,
-} from '../../src/lib/city/store';
+import { IDLE_PULSE_MS, clearIdlePulseTimerForTests, useCityStore } from '../../src/lib/city/store';
 
 afterEach(() => {
   clearIdlePulseTimerForTests();

@@ -89,10 +89,7 @@ export function refreshPayload(payload: BidderPayload, now = Date.now()): Bidder
   return { ...payload, issuedAt: now };
 }
 
-function setBidderCookie(
-  store: Awaited<ReturnType<typeof cookies>>,
-  payload: BidderPayload,
-): void {
+function setBidderCookie(store: Awaited<ReturnType<typeof cookies>>, payload: BidderPayload): void {
   store.set({
     name: COOKIE_NAME,
     value: serializeBidderCookie(payload),

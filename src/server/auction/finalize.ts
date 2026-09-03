@@ -54,7 +54,10 @@ export class CaptureFailureError extends Error {
   readonly retryable: boolean;
   readonly code: string;
   constructor(preBidId: string, code: string, retryable: boolean, message?: string) {
-    super(message ?? `Capture ${retryable ? 'retryable' : 'definitive'} failure for preBid ${preBidId}: ${code}`);
+    super(
+      message ??
+        `Capture ${retryable ? 'retryable' : 'definitive'} failure for preBid ${preBidId}: ${code}`,
+    );
     this.name = 'CaptureFailureError';
     this.retryable = retryable;
     this.code = code;

@@ -11,9 +11,7 @@ const CityScene = dynamic(() => import('./CityScene').then((m) => m.CityScene), 
   ssr: false,
   loading: () => (
     <div className="flex h-full w-full items-center justify-center bg-[var(--background)]">
-      <p className="animate-pulse font-mono text-sm text-[var(--muted)]">
-        booting city renderer…
-      </p>
+      <p className="animate-pulse font-mono text-sm text-[var(--muted)]">booting city renderer…</p>
     </div>
   ),
 });

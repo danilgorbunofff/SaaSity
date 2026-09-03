@@ -110,11 +110,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (result.code === 'claim-first') {
     // State-specific conflict: the plot has no auction to queue behind.
     // The modal maps this code to a one-click switch into claim mode.
-    return errorJson(
-      409,
-      'This plot has no active auction yet — claim it to open the bidding',
-      { code: 'claim-first', plotId: id },
-    );
+    return errorJson(409, 'This plot has no active auction yet — claim it to open the bidding', {
+      code: 'claim-first',
+      plotId: id,
+    });
   }
 
   if (result.code === 'not-higher') {

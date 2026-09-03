@@ -61,7 +61,15 @@ async function makePlot(plotId: string): Promise<void> {
   await prisma.plot.upsert({
     where: { id: plotId },
     update: { status: 'LIVE', currentCycleId: null, currentLeaderPreBidId: null },
-    create: { id: plotId, tier: 'OUTER', originX: 0, originY: 0, spanX: 1, spanY: 1, status: 'LIVE' },
+    create: {
+      id: plotId,
+      tier: 'OUTER',
+      originX: 0,
+      originY: 0,
+      spanX: 1,
+      spanY: 1,
+      status: 'LIVE',
+    },
   });
 }
 
@@ -88,12 +96,22 @@ async function locked<T>(plotId: string, fn: (tx: Tx) => Promise<T>): Promise<T>
   });
 }
 
-async function rowOf(id: string): Promise<{ status: string; lostReason: string | null; pi: string | null; cycleId: string | null }> {
+async function rowOf(id: string): Promise<{
+  status: string;
+  lostReason: string | null;
+  pi: string | null;
+  cycleId: string | null;
+}> {
   const row = await prisma.preBid.findUniqueOrThrow({
     where: { id },
     select: { status: true, lostReason: true, stripePaymentIntentId: true, cycleId: true },
   });
-  return { status: row.status, lostReason: row.lostReason, pi: row.stripePaymentIntentId, cycleId: row.cycleId };
+  return {
+    status: row.status,
+    lostReason: row.lostReason,
+    pi: row.stripePaymentIntentId,
+    cycleId: row.cycleId,
+  };
 }
 
 async function scenarioAllSuccess(): Promise<void> {
@@ -102,13 +120,28 @@ async function scenarioAllSuccess(): Promise<void> {
   await makePlot(plotId);
   const cycleId = await openCycle(plotId);
   const idA = await locked(plotId, (tx) =>
-    upsertPreBid(tx, { plotId, cycleId, bidderId: `auth-a-a-${Date.now()}`, maxBidCents: 1000, brand: BRAND('A') }),
+    upsertPreBid(tx, {
+      plotId,
+      cycleId,
+      bidderId: `auth-a-a-${Date.now()}`,
+      maxBidCents: 1000,
+      brand: BRAND('A'),
+    }),
   );
   const idB = await locked(plotId, (tx) =>
-    upsertPreBid(tx, { plotId, cycleId, bidderId: `auth-a-b-${Date.now()}`, maxBidCents: 700, brand: BRAND('B') }),
+    upsertPreBid(tx, {
+      plotId,
+      cycleId,
+      bidderId: `auth-a-b-${Date.now()}`,
+      maxBidCents: 700,
+      brand: BRAND('B'),
+    }),
   );
   const out = await authorizeAttachedRows([idA, idB]);
-  check('partition reports both authorized', out.authorizedIds.length === 2 && out.expiredIds.length === 0);
+  check(
+    'partition reports both authorized',
+    out.authorizedIds.length === 2 && out.expiredIds.length === 0,
+  );
   check('A stays ACTIVE with no intent (stub)', (await rowOf(idA)).status === 'ACTIVE');
   check('B stays ACTIVE with no intent (stub)', (await rowOf(idB)).status === 'ACTIVE');
 }
@@ -120,15 +153,30 @@ async function scenarioExpireBeforeResolution(): Promise<void> {
   const cycleId = await openCycle(plotId);
   const stamp = Date.now();
   const idA = await locked(plotId, (tx) =>
-    upsertPreBid(tx, { plotId, cycleId, bidderId: `auth-b-a-${stamp}`, maxBidCents: 1000, brand: BRAND('A') }),
+    upsertPreBid(tx, {
+      plotId,
+      cycleId,
+      bidderId: `auth-b-a-${stamp}`,
+      maxBidCents: 1000,
+      brand: BRAND('A'),
+    }),
   );
   const idB = await locked(plotId, (tx) =>
-    upsertPreBid(tx, { plotId, cycleId, bidderId: `auth-b-b-${stamp}`, maxBidCents: 700, brand: BRAND('B') }),
+    upsertPreBid(tx, {
+      plotId,
+      cycleId,
+      bidderId: `auth-b-b-${stamp}`,
+      maxBidCents: 700,
+      brand: BRAND('B'),
+    }),
   );
   injectAttachAuthFailure(idB);
   try {
     const out = await authorizeAttachedRows([idA, idB]);
-    check('dead row reported expired', out.expiredIds.includes(idB) && out.authorizedIds.includes(idA));
+    check(
+      'dead row reported expired',
+      out.expiredIds.includes(idB) && out.authorizedIds.includes(idA),
+    );
     const dead = await rowOf(idB);
     check("dead row EXPIRED/'expired'", dead.status === 'EXPIRED' && dead.lostReason === 'expired');
     // Proxy resolution AFTER the helper returns must price survivors only:
@@ -149,7 +197,13 @@ async function scenarioIntentPersistIdempotent(): Promise<void> {
   await makePlot(plotId);
   const cycleId = await openCycle(plotId);
   const id = await locked(plotId, (tx) =>
-    upsertPreBid(tx, { plotId, cycleId, bidderId: `auth-c-${Date.now()}`, maxBidCents: 1000, brand: BRAND('C') }),
+    upsertPreBid(tx, {
+      plotId,
+      cycleId,
+      bidderId: `auth-c-${Date.now()}`,
+      maxBidCents: 1000,
+      brand: BRAND('C'),
+    }),
   );
   injectAttachAuthPiId(id, 'pi_test_123');
   try {
@@ -160,7 +214,10 @@ async function scenarioIntentPersistIdempotent(): Promise<void> {
     // without re-authorizing (no throw, no double-hold in M3).
     injectAttachAuthFailure(id);
     const second = await authorizeAttachedRows([id]);
-    check('retry skips the intent-carrying row', second.authorizedIds.includes(id) && second.expiredIds.length === 0);
+    check(
+      'retry skips the intent-carrying row',
+      second.authorizedIds.includes(id) && second.expiredIds.length === 0,
+    );
     check('row still ACTIVE after skipped retry', (await rowOf(id)).status === 'ACTIVE');
   } finally {
     clearAttachAuthFailures();
@@ -175,10 +232,22 @@ async function scenarioCompensate(): Promise<void> {
   const cycleId = await openCycle(plotId);
   const stamp = Date.now();
   const idA = await locked(plotId, (tx) =>
-    upsertPreBid(tx, { plotId, cycleId, bidderId: `auth-d-a-${stamp}`, maxBidCents: 1000, brand: BRAND('A') }),
+    upsertPreBid(tx, {
+      plotId,
+      cycleId,
+      bidderId: `auth-d-a-${stamp}`,
+      maxBidCents: 1000,
+      brand: BRAND('A'),
+    }),
   );
   const idB = await locked(plotId, (tx) =>
-    upsertPreBid(tx, { plotId, cycleId, bidderId: `auth-d-b-${stamp}`, maxBidCents: 700, brand: BRAND('B') }),
+    upsertPreBid(tx, {
+      plotId,
+      cycleId,
+      bidderId: `auth-d-b-${stamp}`,
+      maxBidCents: 700,
+      brand: BRAND('B'),
+    }),
   );
   // Route tx: resolve with both rows live (price 750, leader A).
   const before = await locked(plotId, async (tx) => {
@@ -201,10 +270,22 @@ async function scenarioCompensate(): Promise<void> {
       const resolution = await resolveCycle(tx, cycle, {});
       const plot = await tx.plot.findUniqueOrThrow({ where: { id: plotId } });
       const price = await tx.auctionCycle.findUniqueOrThrow({ where: { id: cycleId } });
-      return { price: resolution?.priceCents ?? -1, leader: plot.currentLeaderPreBidId, stored: price.currentPriceCents };
+      return {
+        price: resolution?.priceCents ?? -1,
+        leader: plot.currentLeaderPreBidId,
+        stored: price.currentPriceCents,
+      };
     });
-    check('compensating resolve reprices to floor (100)', after.price === 100, `price=${after.price}`);
-    check('leader pointer repaired to the survivor', after.leader === idA, `leader=${after.leader}`);
+    check(
+      'compensating resolve reprices to floor (100)',
+      after.price === 100,
+      `price=${after.price}`,
+    );
+    check(
+      'leader pointer repaired to the survivor',
+      after.leader === idA,
+      `leader=${after.leader}`,
+    );
     check('stored cycle price repaired', after.stored === 100, `stored=${after.stored}`);
   } finally {
     clearAttachAuthFailures();
@@ -232,7 +313,11 @@ async function main(): Promise<void> {
   await scenarioIntentPersistIdempotent();
   await scenarioCompensate();
   await cleanup();
-  console.log(failures === 0 ? '\nPASS: attach-time authorization holds on every path' : `\nFAILED: ${failures} check(s)`);
+  console.log(
+    failures === 0
+      ? '\nPASS: attach-time authorization holds on every path'
+      : `\nFAILED: ${failures} check(s)`,
+  );
   if (failures > 0) process.exitCode = 1;
 }
 

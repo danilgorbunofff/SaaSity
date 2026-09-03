@@ -9,12 +9,7 @@
 import { prisma } from '@/server/prisma';
 import { getOrCreateBidderPayload } from '@/server/bidder-cookie';
 import { checkMutationRateLimit, clientIp } from '@/server/rate-limit';
-import {
-  lockPlot,
-  upsertPreBid,
-  resolveCycle,
-  applySoftClose,
-} from '@/server/auction/engine';
+import { lockPlot, upsertPreBid, resolveCycle, applySoftClose } from '@/server/auction/engine';
 import { emitBidPlaced, emitCycleExtended, emitCycleResolved } from '@/server/realtime/bus';
 // Part 4 `serverless-local-bus`: registers the durable outbox sink so this
 // process's events fan out cross-instance (not just same-process).
@@ -115,9 +110,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       humanSubmitCents: maxBidCents,
       // Attribute the extension to this request's ledger row (or its
       // requester-attributed tick when nothing moved).
-      triggeredExtension: softClose.extended
-        ? { preBidId, bidderId: bidder.bidderId }
-        : undefined,
+      triggeredExtension: softClose.extended ? { preBidId, bidderId: bidder.bidderId } : undefined,
     });
 
     return {

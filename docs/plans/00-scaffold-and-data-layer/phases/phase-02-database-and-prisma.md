@@ -1,7 +1,7 @@
 # Phase 0.2 — Database & Prisma
 
 **Milestone:** [0 · Scaffold & Data Layer](../PLAN.md) · **Prev:** [0.1 Repo & Tooling](phase-01-repo-and-tooling.md) · **Next:** [0.3 Seed & Read API](phase-03-seed-and-read-api.md)
-**Status:** ✅ Done (2026-09-01) · **Estimate:** ~1 day
+**Status:** 🟡 In progress (schema + identity + realtime decision done; prod-database box open) · **Estimate:** ~1 day
 
 ## Goal
 
@@ -54,11 +54,11 @@ A provisioned Postgres instance with the **auction/lease** schema applied via Pr
 ## Exit criteria
 
 - [ ] Dev + prod databases exist, schema identical via same migration
-- [ ] `prisma generate` runs on install/build everywhere
-- [ ] Singleton client exported and used by all future server code
-- [ ] DB host + realtime transport decision recorded with a one-line rationale — binding for phase 0.3 and M2 phase 2.4, neither of which re-decides it
-- [ ] Schema supports the full cycle lifecycle (IDLE → LIVE → RESOLVED → next cycle or back to IDLE) with nothing left over from the old one-time-sale model
-- [ ] Bidder cookie mechanism decided and documented here as the single home for identity
+- [x] `prisma generate` runs on install/build everywhere — `postinstall: prisma generate` in `package.json`; CI runs `npm ci` (never a committed client) and Vercel uses the same hook (`docs/deployment.md`)
+- [x] Singleton client exported and used by all future server code — `src/server/prisma.ts`, imported by all 11 server consumers (auction engine/worker/finalize, outbox, every API route)
+- [x] DB host + realtime transport decision recorded with a one-line rationale — binding for phase 0.3 and M2 phase 2.4, neither of which re-decides it — step 1 of this file (Neon Postgres + SSE); reused verbatim at the top of 2.4
+- [x] Schema supports the full cycle lifecycle (IDLE → LIVE → RESOLVED → next cycle or back to IDLE) with nothing left over from the old one-time-sale model — `Plot`/`AuctionCycle`/`PreBid`/`Bid` + statuses; Part 1–3 remediation kept it current
+- [x] Bidder cookie mechanism decided and documented here as the single home for identity — step 6 of this file (HMAC httpOnly cookie, `bidderRef` ownership checks); implemented in `src/server/bidder-cookie.ts`, tested in `tests/server/bidder-cookie.test.ts`. Limitations (cookie-bound identity, rotation logs out) in README "Bidder identity"
 
 ## Out of scope / notes
 

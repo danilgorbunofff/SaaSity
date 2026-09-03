@@ -10,6 +10,8 @@ import {
   minimumBidCents,
   normalizeTwitterHandle,
   normalizeTargetUrl,
+  parseDollarsToCents,
+  MAX_BID_CENTS,
   type BidFormInput,
 } from '../../src/lib/validation/bid-form';
 
@@ -35,7 +37,8 @@ test('valid claim passes and normalizes handle + url', () => {
   assert.equal(r.values.twitterHandle, 'codeship');
   assert.equal(r.values.targetUrl, 'https://codeship.dev');
   assert.equal(r.values.companyName, 'CodeShip');
-  assert.equal(r.values.maxBidCents, 500);});
+  assert.equal(r.values.maxBidCents, 500);
+});
 
 test('contextual minimums: claim = floor, bid = price + increment, prebid = floor', () => {
   assert.equal(minimumBidCents('claim', 'OUTER'), 100);
@@ -137,4 +140,51 @@ test('multiple bad fields report all errors at once', () => {
   assert.ok(r.errors.twitterHandle);
   assert.ok(r.errors.targetUrl);
   assert.ok(r.errors.maxBidCents);
+});
+
+// Part 6 `amount-parser` — strict dollars→cents, UI string to request int.
+test('parseDollarsToCents accepts plain and 1-2dp amounts to exact cents', () => {
+  assert.deepEqual(parseDollarsToCents('5'), { ok: true, cents: 500 });
+  assert.deepEqual(parseDollarsToCents(' 12.50 '), { ok: true, cents: 1250 });
+  assert.deepEqual(parseDollarsToCents('0.99'), { ok: true, cents: 99 });
+  assert.deepEqual(parseDollarsToCents('7.5'), { ok: true, cents: 750 });
+  // No float ambiguity: 19.99 is exactly 1999, not 1998.999…
+  assert.equal(parseDollarsToCents('19.99').ok, true);
+  if (parseDollarsToCents('19.99').ok) {
+    assert.equal((parseDollarsToCents('19.99') as { cents: number }).cents, 1999);
+  }
+});
+
+test('parseDollarsToCents rejects parseFloat-style junk and locale formats', () => {
+  for (const bad of [
+    '5junk',
+    '12abc',
+    '$12',
+    '1,000',
+    '1 000',
+    '1e3',
+    '1E3',
+    '+5',
+    '-5',
+    '0',
+    '0.00',
+    '',
+    '   ',
+    '.',
+    '.5',
+    '5.',
+    '12.345',
+    'NaN',
+    'Infinity',
+    '--5',
+    '5..0',
+  ]) {
+    assert.equal(parseDollarsToCents(bad).ok, false, `expected reject: ${JSON.stringify(bad)}`);
+  }
+});
+
+test('parseDollarsToCents rejects over-maximum values', () => {
+  assert.equal(parseDollarsToCents('100000').ok, true); // exactly $100k
+  assert.equal(parseDollarsToCents('100000.01').ok, false);
+  assert.equal(MAX_BID_CENTS, 10_000_000);
 });

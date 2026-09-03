@@ -1,7 +1,7 @@
 # Phase 0.1 — Repo & Tooling
 
 **Milestone:** [0 · Scaffold & Data Layer](../PLAN.md) · **Next:** [0.2 Database & Prisma](phase-02-database-and-prisma.md)
-**Status:** ✅ Done (2026-09-01) · **Estimate:** ~0.5 day
+**Status:** 🟡 In progress (tooling + CI done; Vercel deploy + branch-protection boxes open — owner actions) · **Estimate:** ~0.5 day
 
 ## Goal
 
@@ -48,7 +48,7 @@ A committed, deployable Next.js skeleton with Tailwind, core frontend deps, and 
     > changes how pushes to `main` are allowed) intentionally left for the
     > repo owner, not something to flip silently from a remediation pass.
     > See `docs/reviews/m0-m2-remediation/part-02-foundation-delivery-data.md`.
-- [ ] All M0/M1 dependencies installed with pinned versions
+- [x] All M0/M1 dependencies installed with pinned versions — evidence: committed `package-lock.json` + `npm ci` in CI and README clean-checkout path; caret ranges in `package.json` are deliberate (README "Dependency policy", Part 2 correction note below)
   - > **Correction (Part 2 foundation fix, M2):** `package.json` still uses
     > caret ranges, not exact versions — that was a deliberate choice, not
     > an oversight, made explicit now rather than left ambiguous.

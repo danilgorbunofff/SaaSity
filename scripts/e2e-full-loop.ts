@@ -66,7 +66,10 @@ class Session {
     }
   }
 
-  async post<T = Record<string, unknown>>(path: string, body: unknown): Promise<{ status: number; json: T }> {
+  async post<T = Record<string, unknown>>(
+    path: string,
+    body: unknown,
+  ): Promise<{ status: number; json: T }> {
     const res = await fetch(`${BASE}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: this.cookieHeader() },
@@ -142,7 +145,11 @@ class Observer {
           }
           if (!data) continue;
           try {
-            this.events.push({ type, data: JSON.parse(data[1]) as Record<string, unknown>, at: Date.now() });
+            this.events.push({
+              type,
+              data: JSON.parse(data[1]) as Record<string, unknown>,
+              at: Date.now(),
+            });
           } catch {
             // ignore malformed
           }
@@ -162,9 +169,7 @@ class Observer {
   ): Promise<{ event: Observed; latencyMs: number } | null> {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
-      const hit = this.events.find(
-        (e) => e.type === type && e.at >= since && match(e.data),
-      );
+      const hit = this.events.find((e) => e.type === type && e.at >= since && match(e.data));
       if (hit) return { event: hit, latencyMs: hit.at - since };
       if (Date.now() > deadline) return null;
       await sleep(20);
@@ -281,64 +286,123 @@ async function main(): Promise<void> {
       maxBidCents: 500,
     });
     check('claim 200', claim.status === 200, JSON.stringify(claim.json));
-    const claimBody = claim.json as { cycleId?: string; endAt?: string; currentPriceCents?: number; youAreLeader?: boolean };
-    check('claim opens a cycle at the floor price', claimBody.currentPriceCents === 500, `got ${claimBody.currentPriceCents}`);
+    const claimBody = claim.json as {
+      cycleId?: string;
+      endAt?: string;
+      currentPriceCents?: number;
+      youAreLeader?: boolean;
+    };
+    check(
+      'claim opens a cycle at the floor price',
+      claimBody.currentPriceCents === 500,
+      `got ${claimBody.currentPriceCents}`,
+    );
     check('claimer leads', claimBody.youAreLeader === true);
-    check('cycle endAt is ~12h out (MID duration)', !!claimBody.endAt && new Date(claimBody.endAt).getTime() - t0 > 11 * 3600_000);
+    check(
+      'cycle endAt is ~12h out (MID duration)',
+      !!claimBody.endAt && new Date(claimBody.endAt).getTime() - t0 > 11 * 3600_000,
+    );
 
-    for (const [name, obs] of [['A', watchA], ['B', watchB], ['C', watchC]] as const) {
+    for (const [name, obs] of [
+      ['A', watchA],
+      ['B', watchB],
+      ['C', watchC],
+    ] as const) {
       const hit = await obs.waitFor('bid:placed', (d) => d.plotId === plotId, 5000, t0);
       check(
         `session ${name} saw bid:placed <1s (no bidder brand leaked pre-payment)`,
-        !!hit && hit.latencyMs < 1000 && !('leader' in hit.event.data) && !('brand' in hit.event.data),
+        !!hit &&
+          hit.latencyMs < 1000 &&
+          !('leader' in hit.event.data) &&
+          !('brand' in hit.event.data),
         hit ? `${hit.latencyMs}ms, keys=${Object.keys(hit.event.data).join(',')}` : 'no event',
       );
     }
 
     /* ---------------- 2. rival bid → price changes live, no brand leak ---------------- */
-    section('2 · Bob outbids — the price updates live in every session, with no bidder identity broadcast');
+    section(
+      '2 · Bob outbids — the price updates live in every session, with no bidder identity broadcast',
+    );
     const tBid = Date.now();
-    const bidB = await bob.post(`/api/plots/${plotId}/bid`, { plotId, ...brand('B'), maxBidCents: 2000 });
+    const bidB = await bob.post(`/api/plots/${plotId}/bid`, {
+      plotId,
+      ...brand('B'),
+      maxBidCents: 2000,
+    });
     check('bid 200', bidB.status === 200, JSON.stringify(bidB.json));
-    check('second price = 500 + 100 = 600', (bidB.json as { currentPriceCents?: number }).currentPriceCents === 600);
+    check(
+      'second price = 500 + 100 = 600',
+      (bidB.json as { currentPriceCents?: number }).currentPriceCents === 600,
+    );
 
     const tBid2 = Date.now();
-    const bidC = await cara.post(`/api/plots/${plotId}/bid`, { plotId, ...brand('C'), maxBidCents: 3000 });
+    const bidC = await cara.post(`/api/plots/${plotId}/bid`, {
+      plotId,
+      ...brand('C'),
+      maxBidCents: 3000,
+    });
     check('third bidder 200', bidC.status === 200, JSON.stringify(bidC.json));
-    check('second price = 2000 + 100 = 2100', (bidC.json as { currentPriceCents?: number }).currentPriceCents === 2100);
+    check(
+      'second price = 2000 + 100 = 2100',
+      (bidC.json as { currentPriceCents?: number }).currentPriceCents === 2100,
+    );
 
-    for (const [name, obs] of [['A', watchA], ['B', watchB], ['C', watchC]] as const) {
+    for (const [name, obs] of [
+      ['A', watchA],
+      ['B', watchB],
+      ['C', watchC],
+    ] as const) {
       const priceB = await obs.waitFor(
         'bid:placed',
         (d) => d.plotId === plotId && d.currentPriceCents === 600,
         5000,
         tBid,
       );
-      check(`session ${name} saw Bob's bid raise price to 600 <1s (no brand)`,
-        !!priceB && priceB.latencyMs < 1000 && !('leader' in priceB.event.data) && !('brand' in priceB.event.data),
-        priceB ? `${priceB.latencyMs}ms` : 'no event');
+      check(
+        `session ${name} saw Bob's bid raise price to 600 <1s (no brand)`,
+        !!priceB &&
+          priceB.latencyMs < 1000 &&
+          !('leader' in priceB.event.data) &&
+          !('brand' in priceB.event.data),
+        priceB ? `${priceB.latencyMs}ms` : 'no event',
+      );
       const priceC = await obs.waitFor(
         'bid:placed',
         (d) => d.plotId === plotId && d.currentPriceCents === 2100,
         5000,
         tBid2,
       );
-      check(`session ${name} saw Cara's bid raise price to 2100 <1s (no brand)`,
-        !!priceC && priceC.latencyMs < 1000 && !('leader' in priceC.event.data) && !('brand' in priceC.event.data),
-        priceC ? `${priceC.latencyMs}ms` : 'no event');
+      check(
+        `session ${name} saw Cara's bid raise price to 2100 <1s (no brand)`,
+        !!priceC &&
+          priceC.latencyMs < 1000 &&
+          !('leader' in priceC.event.data) &&
+          !('brand' in priceC.event.data),
+        priceC ? `${priceC.latencyMs}ms` : 'no event',
+      );
     }
 
     /* ---------------- 3. soft-close ---------------- */
     section('3 · a bid inside the final 3 minutes extends the countdown');
     const cycleId = (bidC.json as { cycleId?: string }).cycleId ?? claimBody.cycleId!;
-    const shorten = await anon.post(`/api/mock-resolve/${cycleId}`, { mode: 'shorten', seconds: 60 });
+    const shorten = await anon.post(`/api/mock-resolve/${cycleId}`, {
+      mode: 'shorten',
+      seconds: 60,
+    });
     check('shorten cycle to 60s', shorten.status === 200, JSON.stringify(shorten.json));
     const shortenedEndAt = new Date((shorten.json as { endAt: string }).endAt).getTime();
 
     const tLate = Date.now();
-    const lateBid = await bob.post(`/api/plots/${plotId}/bid`, { plotId, ...brand('B'), maxBidCents: 5000 });
+    const lateBid = await bob.post(`/api/plots/${plotId}/bid`, {
+      plotId,
+      ...brand('B'),
+      maxBidCents: 5000,
+    });
     check('late bid 200', lateBid.status === 200, JSON.stringify(lateBid.json));
-    check('soft-close flag set on the response', (lateBid.json as { softCloseExtended?: boolean }).softCloseExtended === true);
+    check(
+      'soft-close flag set on the response',
+      (lateBid.json as { softCloseExtended?: boolean }).softCloseExtended === true,
+    );
     const extendedEndAt = new Date((lateBid.json as { endAt?: string }).endAt ?? 0).getTime();
     check(
       'endAt reset to ~now + 3min (reset-based, not additive)',
@@ -346,20 +410,33 @@ async function main(): Promise<void> {
       `endAt-now = ${extendedEndAt - tLate}ms (was ${shortenedEndAt - tLate}ms)`,
     );
 
-    for (const [name, obs] of [['A', watchA], ['B', watchB], ['C', watchC]] as const) {
+    for (const [name, obs] of [
+      ['A', watchA],
+      ['B', watchB],
+      ['C', watchC],
+    ] as const) {
       const ext = await obs.waitFor('cycle:extended', (d) => d.plotId === plotId, 5000, tLate);
       check(
         `session ${name} saw cycle:extended <1s`,
-        !!ext && ext.latencyMs < 1000 && new Date(String(ext.event.data.endAt)).getTime() === extendedEndAt,
+        !!ext &&
+          ext.latencyMs < 1000 &&
+          new Date(String(ext.event.data.endAt)).getTime() === extendedEndAt,
         ext ? `${ext.latencyMs}ms` : 'no event',
       );
     }
 
     /* ---------------- 4. queue a pre-bid for the NEXT cycle ---------------- */
     section('4 · Cara queues a pre-bid for the next cycle');
-    const pre = await cara.post(`/api/plots/${plotId}/prebid`, { plotId, ...brand('C'), maxBidCents: 4000 });
+    const pre = await cara.post(`/api/plots/${plotId}/prebid`, {
+      plotId,
+      ...brand('C'),
+      maxBidCents: 4000,
+    });
     check('pre-bid 200', pre.status === 200, JSON.stringify(pre.json));
-    check('queued for the next cycle (never the running one)', (pre.json as { queuedForNextCycle?: boolean }).queuedForNextCycle === true);
+    check(
+      'queued for the next cycle (never the running one)',
+      (pre.json as { queuedForNextCycle?: boolean }).queuedForNextCycle === true,
+    );
     const queuedRow = await prisma.preBid.findFirst({
       where: { plotId, status: 'ACTIVE', cycleId: null },
     });
@@ -376,14 +453,33 @@ async function main(): Promise<void> {
       nextCycleId?: string | null;
       openingPriceCents?: number | null;
     };
-    check('winner is the highest max bid (Bob, 5000)', resBody.winnerBrand?.companyName === brand('B').companyName, JSON.stringify(resBody.winnerBrand));
-    check('clearing price is second-price (3000 + 100 = 3100)', resBody.clearingPriceCents === 3100, `got ${resBody.clearingPriceCents}`);
+    check(
+      'winner is the highest max bid (Bob, 5000)',
+      resBody.winnerBrand?.companyName === brand('B').companyName,
+      JSON.stringify(resBody.winnerBrand),
+    );
+    check(
+      'clearing price is second-price (3000 + 100 = 3100)',
+      resBody.clearingPriceCents === 3100,
+      `got ${resBody.clearingPriceCents}`,
+    );
     check('queued pre-bid opened the next cycle immediately', !!resBody.nextCycleId);
-    check('next cycle opens at the tier floor (clean slate)', resBody.openingPriceCents === 500, `got ${resBody.openingPriceCents}`);
+    check(
+      'next cycle opens at the tier floor (clean slate)',
+      resBody.openingPriceCents === 500,
+      `got ${resBody.openingPriceCents}`,
+    );
 
-    for (const [name, obs] of [['A', watchA], ['B', watchB], ['C', watchC]] as const) {
+    for (const [name, obs] of [
+      ['A', watchA],
+      ['B', watchB],
+      ['C', watchC],
+    ] as const) {
       const done = await obs.waitFor('cycle:resolved', (d) => d.plotId === plotId, 5000, tResolve);
-      const winner = done?.event.data.winner as { preBidId?: string; brand?: { companyName?: string } } | null;
+      const winner = done?.event.data.winner as {
+        preBidId?: string;
+        brand?: { companyName?: string };
+      } | null;
       check(
         `session ${name} saw cycle:resolved with the new tenant <1s`,
         !!done && done.latencyMs < 1000 && winner?.brand?.companyName === brand('B').companyName,
@@ -391,13 +487,17 @@ async function main(): Promise<void> {
       );
       check(
         `session ${name}'s cycle:resolved winner carries preBidId (no bidderId)`,
-        typeof winner?.preBidId === 'string' && winner.preBidId.length > 0 && !('bidderId' in (winner ?? {})),
+        typeof winner?.preBidId === 'string' &&
+          winner.preBidId.length > 0 &&
+          !('bidderId' in (winner ?? {})),
         JSON.stringify(winner),
       );
     }
 
     /* ---------------- 6. next auction is live; PREVIOUS tenant stays displayed ---------------- */
-    section('6 · second cycle is live from the queued pre-bid — Bob (paid) stays the tenant while Cara merely bids');
+    section(
+      '6 · second cycle is live from the queued pre-bid — Bob (paid) stays the tenant while Cara merely bids',
+    );
     const after = await anon.get<{ plots: PlotDto[] }>('/api/plots');
     const live = (after.json.plots ?? []).find((p) => p.id === plotId)!;
     check('plot is LIVE again (no gap back to IDLE)', live.status === 'LIVE', live.status);
@@ -406,8 +506,15 @@ async function main(): Promise<void> {
       live.tenant?.companyName === brand('B').companyName,
       JSON.stringify(live.tenant),
     );
-    check('price reset to the floor', live.currentPriceCents === 500, String(live.currentPriceCents));
-    check('countdown restarted at ~12h', !!live.endAt && new Date(live.endAt).getTime() - Date.now() > 11 * 3600_000);
+    check(
+      'price reset to the floor',
+      live.currentPriceCents === 500,
+      String(live.currentPriceCents),
+    );
+    check(
+      'countdown restarted at ~12h',
+      !!live.endAt && new Date(live.endAt).getTime() - Date.now() > 11 * 3600_000,
+    );
 
     /* ---------------- 7. resolve again → IDLE, tenant display handed off ---------------- */
     section('7 · resolving the last cycle leaves an IDLE plot with the new standing tenant (Cara)');
@@ -416,10 +523,22 @@ async function main(): Promise<void> {
     const tResolve2 = Date.now();
     const resolved2 = await anon.post(`/api/mock-resolve/${cycle2}`, { mode: 'resolve' });
     check('second mock-resolve 200', resolved2.status === 200, JSON.stringify(resolved2.json));
-    check('no queued pre-bids → no next cycle', (resolved2.json as { nextCycleId?: string | null }).nextCycleId == null);
+    check(
+      'no queued pre-bids → no next cycle',
+      (resolved2.json as { nextCycleId?: string | null }).nextCycleId == null,
+    );
 
-    for (const [name, obs] of [['A', watchA], ['B', watchB], ['C', watchC]] as const) {
-      const done = await obs.waitFor('cycle:resolved', (d) => d.plotId === plotId && d.nextCycle == null, 5000, tResolve2);
+    for (const [name, obs] of [
+      ['A', watchA],
+      ['B', watchB],
+      ['C', watchC],
+    ] as const) {
+      const done = await obs.waitFor(
+        'cycle:resolved',
+        (d) => d.plotId === plotId && d.nextCycle == null,
+        5000,
+        tResolve2,
+      );
       check(`session ${name} saw the plot go IDLE with no next cycle`, !!done, 'no event');
     }
 
@@ -433,7 +552,7 @@ async function main(): Promise<void> {
     );
     const row = await prisma.plot.findUniqueOrThrow({ where: { id: plotId } });
     check(
-      "DB row confirms the tenant handoff from Bob to Cara",
+      'DB row confirms the tenant handoff from Bob to Cara',
       row.tenantCompanyName === brand('C').companyName,
       `display=${row.tenantCompanyName}`,
     );

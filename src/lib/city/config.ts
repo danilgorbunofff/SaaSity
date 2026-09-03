@@ -94,8 +94,7 @@ export const PERF_MINIMAL =
 
 /** QA overlay flag (?debug=1): plot-id labels + force-ownedLeading toggle. */
 export const DEBUG_OVERLAY =
-  typeof window !== 'undefined' &&
-  new URLSearchParams(window.location.search).get('debug') === '1';
+  typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
 
 /**
  * Perf overlay flag (?perf=stats): renderer draw-call/triangle readout for

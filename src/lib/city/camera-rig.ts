@@ -13,6 +13,21 @@ import { CAMERA } from './config';
  * toast and the a11y list in phase 1.4).
  */
 
+/**
+ * Part 6 checklist (gesture alternatives): the wheel/pinch zoom gesture gets
+ * tap + keyboard equivalents — clamped to the same CAMERA min/max the
+ * controls enforce. No-op before the scene mounts.
+ */
+export function zoomBy(factor: number): void {
+  const c = controls;
+  if (!c) return;
+  const cam = c.object as THREE.OrthographicCamera;
+  cancelFlyTo();
+  cam.zoom = Math.min(CAMERA.maxZoom, Math.max(CAMERA.minZoom, cam.zoom * factor));
+  cam.updateProjectionMatrix();
+  c.update();
+}
+
 let controls: OrbitControlsImpl | null = null;
 
 export function registerCameraControls(instance: OrbitControlsImpl | null): void {
@@ -33,7 +48,10 @@ interface ResolvedPlot {
   tier: 'OUTER' | 'MID' | 'CORE';
 }
 
-let seedById: Map<string, { originX: number; originY: number; spanX: number; spanY: number; tier: ResolvedPlot['tier'] }> | null = null;
+let seedById: Map<
+  string,
+  { originX: number; originY: number; spanX: number; spanY: number; tier: ResolvedPlot['tier'] }
+> | null = null;
 
 function getSeedById() {
   if (!seedById) {
@@ -129,7 +147,7 @@ export function flyToPlot(plotId: string): void {
 
   const step = (ts: number) => {
     if (start < 0) start = ts;
-    const t = Math.min(1, (ts - start) / FLY_MS);
+    const t = Math.min(1, (ts - start) / cameraTweenMs(FLY_MS));
     const k = easeInOutCubic(t);
     applyView(c, cam, startTarget, endTarget, startPos, endPos, startZoom, endZoom, k);
     if (t < 1) {
@@ -164,7 +182,7 @@ export function resetView(): void {
   let start = -1;
   const step = (ts: number) => {
     if (start < 0) start = ts;
-    const t = Math.min(1, (ts - start) / FLY_MS);
+    const t = Math.min(1, (ts - start) / cameraTweenMs(FLY_MS));
     const k = easeInOutCubic(t);
     applyView(c, cam, startTarget, endTarget, startPos, endPos, startZoom, CAMERA.zoom, k);
     if (t < 1) {

@@ -39,7 +39,9 @@ export function fieldErrorsJson(fieldErrors: FieldErrors) {
 export function parseBody(
   body: unknown,
   ctx: { mode: BidMode; tier: PlotTier; selfHostnames?: string[] },
-): { ok: true; values: AuctionBody & { tagline?: string; mrrText?: string } } | { ok: false; response: NextResponse } {
+):
+  | { ok: true; values: AuctionBody & { tagline?: string; mrrText?: string } }
+  | { ok: false; response: NextResponse } {
   const parsed = auctionBodySchema.safeParse(body);
   if (!parsed.success) {
     const fieldErrors: FieldErrors = {};

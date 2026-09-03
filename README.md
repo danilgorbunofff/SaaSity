@@ -52,13 +52,13 @@ Open http://localhost:3000 to see the city grid.
 
 See [`.env.example`](.env.example) for the full, commented list. Summary:
 
-| Variable                                                        | Required         | Description                                       |
-| --------------------------------------------------------------- | ---------------- | ------------------------------------------------- |
-| `DATABASE_URL`                                                  | yes              | PostgreSQL connection string                      |
-| `BIDDER_COOKIE_SECRET`                                          | yes              | HMAC secret for anonymous bidder identity cookies |
-| `WORKER_SECRET`                                                 | yes (for cron)    | Shared secret authorizing `POST /api/cron/resolve` (expiry-sweep worker); the route always 401s without it |
-| `MOCK_PAYMENTS`                                                 | yes, pre-M3       | Set to `1` to run the mock capture/cancel/authorize loop; unset means every capture fails closed (no unpaid winners) |
-| Stripe keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, ...) | milestone M3      | Real payments (not yet wired)                     |
+| Variable                                                        | Required       | Description                                                                                                          |
+| --------------------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                                  | yes            | PostgreSQL connection string                                                                                         |
+| `BIDDER_COOKIE_SECRET`                                          | yes            | HMAC secret for anonymous bidder identity cookies                                                                    |
+| `WORKER_SECRET`                                                 | yes (for cron) | Shared secret authorizing `POST /api/cron/resolve` (expiry-sweep worker); the route always 401s without it           |
+| `MOCK_PAYMENTS`                                                 | yes, pre-M3    | Set to `1` to run the mock capture/cancel/authorize loop; unset means every capture fails closed (no unpaid winners) |
+| Stripe keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, ...) | milestone M3   | Real payments (not yet wired)                                                                                        |
 
 ## Deployment
 
@@ -67,6 +67,24 @@ Hobby-plan-safe `vercel.json` cron entry, a Vercel-plan-independent GitHub
 Actions alternative for resolving ended auction cycles, required env vars
 per environment, and a go-live checklist. See
 [`docs/deployment.md`](docs/deployment.md).
+
+## Bidder identity
+
+There are no accounts, passwords, or emails. A bidder is an HMAC-signed
+`httpOnly` cookie (`src/server/bidder-cookie.ts`) minted on their first
+claim/bid/pre-bid — roughly: **one browser = one bidder**. Consequences:
+
+- Clearing cookies, switching browsers/devices, or going incognito creates a
+  **new** bidder identity. Positions, "am I leading", and tenant derivation
+  for the old identity become unreachable from the new one (rows are keyed by
+  the opaque `bidderRef`, and `/api/me/bids` only answers for the calling
+  cookie).
+- Rotating `BIDDER_COOKIE_SECRET` logs every existing bidder out at once.
+  Never share one secret value across local/preview/production.
+- Anyone with the cookie (e.g. a shared device) acts as that bidder. The
+  cookie is `httpOnly` + `sameSite=lax`, but there is no second factor and no
+  recovery flow — by design for an auction MVP, documented here so M3's card
+  flows inherit the constraint knowingly.
 
 ## Dependency policy
 

@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { minimapCellKind } from '../../src/components/city/hud/Minimap';
+import { minimapCellKind, findNextCell } from '../../src/components/city/hud/Minimap';
 import type { PlotDto } from '../../src/types/api';
 
 function plot(overrides: Partial<PlotDto> & Pick<PlotDto, 'id' | 'status'>): PlotDto {
@@ -40,8 +40,23 @@ test('live plot we lead resolves mine', () => {
 
 test('outbid flips override even though the rival leads', () => {
   const p = plot({ id: 'a', status: 'LIVE', currentLeaderPreBidId: 'rival-prebid' });
-  assert.equal(
-    minimapCellKind(p, new Set(['my-prebid']), new Set(['a'])),
-    'outbid',
-  );
+  assert.equal(minimapCellKind(p, new Set(['my-prebid']), new Set(['a'])), 'outbid');
+});
+
+// Part 6 `keyboard-fallback` — arrows skip empty cells predictably.
+test('findNextCell skips empties in the pressed direction', () => {
+  const cells: (string | null)[][] = [
+    ['a', null, null],
+    [null, null, 'b'],
+    [null, null, null],
+  ];
+  assert.deepEqual(findNextCell(cells, 0, 0, 1, 0), null); // row 0: nothing right
+  assert.deepEqual(findNextCell(cells, 0, 0, 0, 1), null); // col 0: nothing below
+  assert.deepEqual(findNextCell(cells, 0, 1, 1, 0)?.id, 'b'); // gap skipped
+});
+
+test('findNextCell returns null at the edge (focus stays put)', () => {
+  const cells: (string | null)[][] = [[null, 'a']];
+  assert.equal(findNextCell(cells, 1, 0, 1, 0), null);
+  assert.equal(findNextCell(cells, 1, 0, -1, 0), null);
 });

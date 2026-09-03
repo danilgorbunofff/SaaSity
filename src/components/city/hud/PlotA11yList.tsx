@@ -1,9 +1,11 @@
 'use client';
 
 /**
- * Phase 1.4 a11y: visually-hidden, Tab-reachable list of all 49 plots.
- * Activating an entry selects + flies to the plot - screen-reader and
- * keyboard-only users get the same navigation as minimap / My Leases.
+ * Part 6 `keyboard-fallback`: ONE canonical keyboard surface (the minimap's
+ * roving tabindex). These buttons stay in the accessibility tree for screen
+ * readers but OUT of the tab order — 49 invisible tab stops for sighted
+ * keyboard users was the finding. SR users reach them with the virtual
+ * cursor; sighted keyboard users tab once to the minimap.
  */
 
 import { useCityStore } from '@/lib/city/store';
@@ -34,6 +36,7 @@ export function PlotA11yList() {
           <li key={p.id}>
             <button
               type="button"
+              tabIndex={-1}
               onClick={() => {
                 setSelectedPlotId(p.id);
                 flyToPlot(p.id);

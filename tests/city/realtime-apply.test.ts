@@ -188,7 +188,8 @@ test('refresh-while-outbid: snapshot + positions reconstruct the loss without an
   assert.ok(useCityStore.getState().outbidPlotIds.has(PLOT), 'outbid reconstructed from snapshot');
 });
 
-test('rotation clears stale outbid; still-losing the fresh cycle re-adds after refresh', () => {  seedLivePlot({ cycleId: OLD_CYCLE, currentLeaderPreBidId: 'pb-rival' });
+test('rotation clears stale outbid; still-losing the fresh cycle re-adds after refresh', () => {
+  seedLivePlot({ cycleId: OLD_CYCLE, currentLeaderPreBidId: 'pb-rival' });
   const s = useCityStore.getState();
   s.setMyPositions([{ preBidId: 'pb-mine', plotId: PLOT, cycleId: OLD_CYCLE, status: 'ACTIVE' }]);
   s.setPlots([...s.plots.values()]);
@@ -199,9 +200,11 @@ test('rotation clears stale outbid; still-losing the fresh cycle re-adds after r
   assert.ok(!useCityStore.getState().outbidPlotIds.has(PLOT), 'stale contest cleared on rotation');
 
   // Owner refresh: my queued row attached to the new cycle but loses → back.
-  useCityStore.getState().setMyPositions([
-    { preBidId: MY_QUEUED_PB, plotId: PLOT, cycleId: NEW_CYCLE, status: 'ACTIVE' },
-  ]);
+  useCityStore
+    .getState()
+    .setMyPositions([
+      { preBidId: MY_QUEUED_PB, plotId: PLOT, cycleId: NEW_CYCLE, status: 'ACTIVE' },
+    ]);
   assert.ok(useCityStore.getState().outbidPlotIds.has(PLOT), 'fresh-cycle outbid re-derived');
 });
 

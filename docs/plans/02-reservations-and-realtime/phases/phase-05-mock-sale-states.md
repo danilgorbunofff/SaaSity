@@ -1,9 +1,9 @@
 # Phase 2.5 — Mock Cycle Resolution & Full Loop
 
 **Milestone:** [2 · Auctions & Realtime](../PLAN.md) · **Prev:** [2.4 Realtime Feed](phase-04-realtime-feed.md) · **Next:** [Milestone 3](../../03-stripe-payments/PLAN.md)
-**Status:** ✅ Done · **Estimate:** ~1 day
+**Status:** 🟡 In progress (full loop implemented + locally verified; preview rehearsal pending — see Verification) · **Estimate:** ~1 day
 
-**Evidence (verified 2026-09-02):** unit suite 52/52 (incl. `tests/auction/mock-payments.test.ts`
+**Evidence (verified 2026-09-02, LOCAL-ONLY):** unit suite 52/52 (incl. `tests/auction/mock-payments.test.ts`
 + `capture-cascade.test.ts`), `tsc --noEmit` clean, `next build` clean with
 `ƒ /api/mock-resolve/[cycleId]`. Full-loop E2E (`scripts/e2e-full-loop.ts`) against a
 prod server (`MOCK_PAYMENTS=1`): 38 assertions green — claim → LIVE + countdown →
@@ -44,7 +44,7 @@ Close the loop without real Stripe money: a manual "resolve now" trigger runs th
 
 ## Verification
 
-- The E2E scenario passes on a production preview URL, not just localhost
+- The E2E scenario passes on a production preview URL, not just localhost — PENDING (Part 7 `preview-proof-overclaim`): passed on a local prod-mode server (`MOCK_PAYMENTS=1`, 38-assertion script + real-browser pass, zero console errors). localhost is not preview evidence; re-run the release rehearsal on the preview deployment and record URL + SHA + date + result here
 
 ## Exit criteria
 

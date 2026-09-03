@@ -12,6 +12,7 @@ import { useCityStore } from '@/lib/city/store';
 import { sectorLabel } from '@/lib/city/hud-hooks';
 import { flyToPlot } from '@/lib/city/camera-rig';
 import { useBidFormStore } from '@/lib/bid/bid-form-store';
+import { loadBrand } from '@/lib/bid/brand-memory';
 import { formatPrice } from '@/lib/tiers';
 import { tierIncrementCents } from '@/components/city/PlotSkins';
 
@@ -26,8 +27,11 @@ interface Toast {
 export function OutbidToast() {
   const outbidPlotIds = useCityStore((s) => s.outbidPlotIds);
   const plots = useCityStore((s) => s.plots);
+  const setSelectedPlotId = useCityStore((s) => s.setSelectedPlotId);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const prevRef = useRef<Set<string>>(new Set());
+  /** Dismissal pauses while the pointer/focus is inside (readable toasts). */
+  const pausedRef = useRef(false);
 
   useEffect(() => {
     // Detect NEW outbid flips only (sticky set may already contain old ones).
@@ -42,9 +46,11 @@ export function OutbidToast() {
   }, [outbidPlotIds]);
 
   // Per-toast auto-dismiss: one shared sweep, timers derived from createdAt.
+  // Skipped while hovered/focused so a reader never loses the message mid-read.
   useEffect(() => {
     if (toasts.length === 0) return;
     const interval = setInterval(() => {
+      if (pausedRef.current) return;
       const now = Date.now();
       setToasts((prev) => prev.filter((t) => now - t.createdAt < TOAST_MS));
     }, 1000);
@@ -52,8 +58,9 @@ export function OutbidToast() {
   }, [toasts.length]);
 
   useEffect(() => {
+    // FIFO: Escape dismisses the OLDEST visible toast first.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setToasts((prev) => prev.slice(0, -1));
+      if (e.key === 'Escape') setToasts((prev) => prev.slice(1));
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -61,10 +68,50 @@ export function OutbidToast() {
 
   const dismiss = (id: string) => setToasts((prev) => prev.filter((t) => t.id !== id));
 
-  if (toasts.length === 0) return null;
+  const setPaused = (paused: boolean) => {
+    // The sweep reads the ref live — no re-render needed.
+    pausedRef.current = paused;
+  };
+
+  // Durable outbid: toasts expire, but the contested state is sticky in the
+  // store — keep one compact revisitable chip so the state survives refresh
+  // and the toast's disappearance (detail card + minimap carry the rest).
+  if (toasts.length === 0) {
+    if (outbidPlotIds.size === 0) return null;
+    const firstId = Array.from(outbidPlotIds)[0];
+    const first = plots.get(firstId);
+    if (!first) return null;
+    return (
+      <div className="absolute bottom-3 left-1/2 z-30 max-w-[calc(100vw-2rem)] -translate-x-1/2">
+        <button
+          type="button"
+          onClick={() => {
+            setSelectedPlotId(firstId);
+            flyToPlot(firstId);
+          }}
+          title="Review contested plots"
+          className="flex min-h-11 items-center gap-2 rounded-full border border-[#ffb400]/50 bg-[#050508]/95 px-4 py-2 font-mono text-xs text-[#ffb400] shadow-[0_0_24px_rgba(255,180,0,0.2)] backdrop-blur-sm hover:bg-[#ffb400]/10 focus-visible:outline-2 focus-visible:outline-[#ffb400]"
+        >
+          <span aria-hidden>⚠</span>
+          {outbidPlotIds.size} contested — review Sector {sectorLabel(first)}
+          {outbidPlotIds.size > 1 ? ` +${outbidPlotIds.size - 1}` : ''}
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div aria-live="polite" className="absolute bottom-3 left-1/2 z-30 flex -translate-x-1/2 flex-col-reverse gap-2">
+    // Single polite live region: new toast nodes are announced on insert.
+    // Items carry NO nested role="alert" (conflicting assertive-in-polite).
+    <div
+      aria-live="polite"
+      role="status"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={() => setPaused(false)}
+      className="absolute bottom-3 left-1/2 z-30 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col-reverse items-center gap-2"
+    >
       {toasts.map((toast) => {
         const plot = plots.get(toast.id);
         if (!plot) return null;
@@ -75,11 +122,11 @@ export function OutbidToast() {
           <div
             key={toast.id}
             data-testid="hud-outbid-toast"
-            role="alert"
-            className="flex items-center gap-3 rounded-lg border border-[#ffb400]/60 bg-[#050508]/95 px-4 py-2.5 font-mono text-[12px] text-[#ffb400] shadow-[0_0_24px_rgba(255,180,0,0.25)] backdrop-blur-sm"
+            className="flex max-w-full items-center gap-3 rounded-lg border border-[#ffb400]/60 bg-[#050508]/95 px-4 py-2.5 font-mono text-xs text-[#ffb400] shadow-[0_0_24px_rgba(255,180,0,0.25)] backdrop-blur-sm"
           >
             <span>
-              Sector {sectorLabel(plot)} contested{step > 0 ? ` — +${formatPrice(step)} to retain` : ''}
+              Sector {sectorLabel(plot)} contested
+              {step > 0 ? ` — +${formatPrice(step)} to retain` : ''}
             </span>
             <button
               type="button"
@@ -87,17 +134,20 @@ export function OutbidToast() {
                 dismiss(toast.id);
                 flyToPlot(plot.id);
                 // 2.1: the toast's click now opens the real bid form.
-                useBidFormStore.getState().openBidForm(plot.id, 'bid');
+                // Part 6: prefilled with the caller's own saved brand.
+                useBidFormStore
+                  .getState()
+                  .openBidForm(plot.id, 'bid', { prefill: loadBrand(plot.id) });
               }}
-              className="rounded border border-[#ffb400]/70 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-[#ffb400] hover:bg-[#ffb400]/10"
+              className="min-h-11 shrink-0 rounded border border-[#ffb400]/70 px-2 py-1 text-xs font-semibold uppercase tracking-wider text-[#ffb400] hover:bg-[#ffb400]/10 active:bg-[#ffb400]/20 focus-visible:outline-2 focus-visible:outline-[#ffb400]"
             >
               Jump & Outbid
             </button>
             <button
               type="button"
               onClick={() => dismiss(toast.id)}
-              aria-label="Dismiss notification"
-              className="text-[14px] leading-none text-[#6b7a8c] hover:text-[#e8f6ff]"
+              aria-label={`Dismiss contested notification for Sector ${sectorLabel(plot)}`}
+              className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded text-sm leading-none text-[#9fd8e6] hover:text-[#e8f6ff] focus-visible:outline-2 focus-visible:outline-[#ffb400]"
             >
               ×
             </button>

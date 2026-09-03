@@ -19,7 +19,10 @@
 import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient, Prisma } from '../src/generated/prisma/client';
-import { attachStripePaymentIntentId, PaymentIntentConflictError } from '../src/server/auction/payment-intent';
+import {
+  attachStripePaymentIntentId,
+  PaymentIntentConflictError,
+} from '../src/server/auction/payment-intent';
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
@@ -76,14 +79,21 @@ async function main() {
   });
 
   // --- A: raw DB constraint rejects a duplicate non-null value ---------
-  await prisma.preBid.update({ where: { id: PREBID_A }, data: { stripePaymentIntentId: 'pi_proof_alpha' } });
+  await prisma.preBid.update({
+    where: { id: PREBID_A },
+    data: { stripePaymentIntentId: 'pi_proof_alpha' },
+  });
   let rawConflictThrew = false;
   let rawConflictIsP2002 = false;
   try {
-    await prisma.preBid.update({ where: { id: PREBID_B }, data: { stripePaymentIntentId: 'pi_proof_alpha' } });
+    await prisma.preBid.update({
+      where: { id: PREBID_B },
+      data: { stripePaymentIntentId: 'pi_proof_alpha' },
+    });
   } catch (err) {
     rawConflictThrew = true;
-    rawConflictIsP2002 = err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
+    rawConflictIsP2002 =
+      err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
   }
   check('A1: raw duplicate update throws', rawConflictThrew);
   check('A2: raw duplicate update throws Prisma P2002 specifically', rawConflictIsP2002);
@@ -102,7 +112,10 @@ async function main() {
   } catch {
     retrySecondCallThrew = true;
   }
-  check('B1: same preBid + same PaymentIntent id retried twice does not throw', !retrySecondCallThrew);
+  check(
+    'B1: same preBid + same PaymentIntent id retried twice does not throw',
+    !retrySecondCallThrew,
+  );
   const aAfterRetry = await prisma.preBid.findUniqueOrThrow({ where: { id: PREBID_A } });
   check(
     'B2: PreBid A still holds its own PaymentIntent id after the retry',
@@ -117,11 +130,20 @@ async function main() {
     conflictError = err;
   }
   check('C1: cross-row conflict throws', conflictError !== null);
-  check('C2: cross-row conflict throws PaymentIntentConflictError (typed, not raw Prisma)', conflictError instanceof PaymentIntentConflictError);
+  check(
+    'C2: cross-row conflict throws PaymentIntentConflictError (typed, not raw Prisma)',
+    conflictError instanceof PaymentIntentConflictError,
+  );
   if (conflictError instanceof PaymentIntentConflictError) {
     check('C3: error identifies the losing preBid', conflictError.preBidId === PREBID_B);
-    check('C4: error identifies the conflicting PaymentIntent id', conflictError.stripePaymentIntentId === 'pi_proof_alpha');
-    check('C5: error identifies the existing owner preBid', conflictError.conflictingPreBidId === PREBID_A);
+    check(
+      'C4: error identifies the conflicting PaymentIntent id',
+      conflictError.stripePaymentIntentId === 'pi_proof_alpha',
+    );
+    check(
+      'C5: error identifies the existing owner preBid',
+      conflictError.conflictingPreBidId === PREBID_A,
+    );
   }
   const bAfterConflict = await prisma.preBid.findUniqueOrThrow({ where: { id: PREBID_B } });
   check(
@@ -133,7 +155,9 @@ async function main() {
   await cleanup();
 
   if (failures === 0) {
-    console.log(`PASS: all ${total} checks green (unique constraint + idempotent retry + typed conflict)`);
+    console.log(
+      `PASS: all ${total} checks green (unique constraint + idempotent retry + typed conflict)`,
+    );
   } else {
     console.error(`${failures} check(s) FAILED`);
     process.exit(1);

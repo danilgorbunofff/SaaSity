@@ -9,6 +9,7 @@
  * per-second 1 Hz tick is reserved for the detail card (1.5 invariant).
  */
 
+import { useState } from 'react';
 import { useCityStore } from '@/lib/city/store';
 import type { ConnectionState } from '@/lib/city/store';
 import { useCityValueCents, formatHudCountdown, hudNowMs } from '@/lib/city/hud-hooks';
@@ -57,7 +58,10 @@ function useCounters(): Counters {
     perTier,
     idle,
     live,
-    nextEndAt: nextEndAtMs === Infinity || nextEndAtMs <= now ? null : formatHudCountdown(new Date(nextEndAtMs).toISOString(), now),
+    nextEndAt:
+      nextEndAtMs === Infinity || nextEndAtMs <= now
+        ? null
+        : formatHudCountdown(new Date(nextEndAtMs).toISOString(), now),
   };
 }
 
@@ -108,7 +112,9 @@ function ConnectionBadge() {
       />
       <span className="text-[9px] uppercase tracking-[0.2em] text-[#6b7a8c]">
         {copy.label}
-        {connection === 'live' && age ? <span className="ml-1 normal-case tracking-normal">· {age}</span> : null}
+        {connection === 'live' && age ? (
+          <span className="ml-1 normal-case tracking-normal">· {age}</span>
+        ) : null}
       </span>
     </span>
   );
@@ -118,43 +124,76 @@ export function TopStrip() {
   const counters = useCounters();
   const valueCents = useCityValueCents();
   const loading = useCityStore((s) => s.loading);
+  // Part 6 `mobile-hud-overlap`: phones get a one-line summary — secondary
+  // metrics live behind a disclosure instead of wrapping over the scene.
+  const [expanded, setExpanded] = useState(false);
   return (
     <div
       data-testid="hud-top-strip"
-      className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded-full border border-[#12303a] bg-[#050508]/85 px-4 py-1.5 font-mono text-[11px] tracking-wide text-[#9fd8e6] shadow-[0_0_18px_rgba(0,240,255,0.12)] backdrop-blur-sm"
+      className="pointer-events-none absolute left-1/2 top-[max(0.75rem,env(safe-area-inset-top))] z-20 max-w-[calc(100vw-1rem)] -translate-x-1/2 rounded-full border border-[#12303a] bg-[#050508]/85 px-4 py-1.5 font-mono text-xs tracking-wide text-[#9fd8e6] shadow-[0_0_18px_rgba(0,240,255,0.12)] backdrop-blur-sm"
     >
-      <span aria-hidden className="text-[#00f0ff]">▲</span>
-      <span className="text-[10px] uppercase tracking-[0.25em] text-[#6b7a8c]">SaaSity</span>
+      <span aria-hidden className="text-[#00f0ff]">
+        ▲
+      </span>
+      <span className="text-[10px] uppercase tracking-[0.25em] text-[#9fd8e6]">SaaSity</span>
       <span className="mx-2 text-[#2a3a46]">|</span>
-      {TIER_ORDER.map((tier) => (
-        <span key={tier}>
-          <span className="text-[#6b7a8c]">{tier.slice(0, 2)}</span>{' '}
-          <span className="text-[#00f0ff]">{counters.perTier[tier].live}</span>/
-          <span>{counters.perTier[tier].idle}</span>
-          <span className="mx-2 text-[#2a3a46]">·</span>
-        </span>
-      ))}
+      {/* Always-visible essentials: live count + next close. */}
       <span className="text-[#00f0ff]">{counters.live}</span> live
-      <span className="mx-2 text-[#2a3a46]">|</span>
-      <span>{counters.idle}</span> idle
-      <span className="mx-2 text-[#2a3a46]">|</span>
-      <span className="text-[#ffb400]">{formatPrice(valueCents)}</span> committed
       {counters.nextEndAt ? (
         <>
           <span className="mx-2 text-[#2a3a46]">|</span>
           next close <span className="text-[#00f0ff]">{counters.nextEndAt}</span>
         </>
       ) : null}
-      <span className="mx-2 text-[#2a3a46]">|</span>
-      <span className="flex items-center gap-1.5" aria-hidden>
-        <span className="inline-block h-2 w-2 rounded-full bg-[#00f0ff]" />
-        <span className="text-[9px] text-[#6b7a8c]">yours</span>
-        <span className="inline-block h-2 w-2 rounded-full bg-[#ffb400]" />
-        <span className="text-[9px] text-[#6b7a8c]">outbid</span>
+      {/* Secondary metrics: inline on sm+, disclosed on phones. */}
+      <span className="hidden sm:inline">
+        <span className="mx-2 text-[#2a3a46]">|</span>
+        {TIER_ORDER.map((tier) => (
+          <span key={tier}>
+            <span className="text-[#6b7a8c]">{tier.slice(0, 2)}</span>{' '}
+            <span className="text-[#00f0ff]">{counters.perTier[tier].live}</span>/
+            <span>{counters.perTier[tier].idle}</span>
+            <span className="mx-2 text-[#2a3a46]">·</span>
+          </span>
+        ))}
+        <span>{counters.idle}</span> idle
+        <span className="mx-2 text-[#2a3a46]">|</span>
+        <span className="text-[#ffb400]">{formatPrice(valueCents)}</span> committed
+        <span className="mx-2 text-[#2a3a46]">|</span>
+        <span className="items-center gap-1.5" aria-hidden>
+          <span className="inline-block h-2 w-2 rounded-full bg-[#00f0ff]" />
+          <span className="text-[10px] text-[#9fd8e6]"> yours</span>
+          <span className="ml-2 inline-block h-2 w-2 rounded-full bg-[#ffb400]" />
+          <span className="text-[10px] text-[#9fd8e6]"> outbid</span>
+        </span>
+        {loading ? <span className="ml-2 animate-pulse text-[#6b7a8c]">SYNCING…</span> : null}
+        <span className="mx-2 text-[#2a3a46]">|</span>
+        <ConnectionBadge />
       </span>
-      {loading ? <span className="ml-2 animate-pulse text-[#6b7a8c]">SYNCING…</span> : null}
-      <span className="mx-2 text-[#2a3a46]">|</span>
-      <ConnectionBadge />
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        aria-label={expanded ? 'Hide city stats' : 'Show city stats'}
+        className="pointer-events-auto ml-2 rounded-full border border-[#12303a] px-2 py-0.5 text-[10px] uppercase tracking-wider text-[#9fd8e6] hover:border-[#00f0ff]/50 sm:hidden"
+      >
+        {expanded ? 'less' : 'stats'}
+      </button>
+      {expanded ? (
+        <span className="mt-1 flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 border-t border-[#12303a] pt-1 text-[11px] sm:hidden">
+          {TIER_ORDER.map((tier) => (
+            <span key={tier}>
+              <span className="text-[#6b7a8c]">{tier}</span>{' '}
+              <span className="text-[#00f0ff]">{counters.perTier[tier].live}</span>/
+              <span>{counters.perTier[tier].idle}</span>
+            </span>
+          ))}
+          <span>{counters.idle} idle</span>
+          <span className="text-[#ffb400]">{formatPrice(valueCents)} committed</span>
+          {loading ? <span className="animate-pulse">SYNCING…</span> : null}
+          <ConnectionBadge />
+        </span>
+      ) : null}
     </div>
   );
 }

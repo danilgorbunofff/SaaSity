@@ -227,11 +227,25 @@ test('eventKeyOf: same logical occurrence shares a key across local + outbox cop
   assert.notEqual(eventKeyOf(base), eventKeyOf({ ...base, cycleId: 'c2' }));
   // Per-type namespaces never collide.
   assert.notEqual(
-    eventKeyOf({ type: 'cycle:extended', cycleId: 'c1', currentPriceCents: null, leaderPreBidId: null, endAt: '2026-01-01T00:00:00.000Z', clearingPriceCents: null }),
+    eventKeyOf({
+      type: 'cycle:extended',
+      cycleId: 'c1',
+      currentPriceCents: null,
+      leaderPreBidId: null,
+      endAt: '2026-01-01T00:00:00.000Z',
+      clearingPriceCents: null,
+    }),
     eventKeyOf({ ...base }),
   );
   // Resolutions key off the resolved cycle: reconcile replays reuse it.
-  const res = { type: 'cycle:resolved' as const, cycleId: 'c9', currentPriceCents: null, leaderPreBidId: null, endAt: null, clearingPriceCents: 3100 };
+  const res = {
+    type: 'cycle:resolved' as const,
+    cycleId: 'c9',
+    currentPriceCents: null,
+    leaderPreBidId: null,
+    endAt: null,
+    clearingPriceCents: 3100,
+  };
   assert.equal(eventKeyOf(res), eventKeyOf({ ...res }));
   assert.notEqual(eventKeyOf(res), eventKeyOf({ ...res, cycleId: 'c10' }));
 });

@@ -83,7 +83,9 @@ async function main() {
   if (preBids !== 1) fail(`FAIL: expected 1 ACTIVE pre-bid, got ${preBids}`);
 
   if (pass) {
-    console.log(`PASS: 1 claim won, ${conflictCount} x 409, 1 OPEN cycle, leader=${leaderPreBid?.companyName}`);
+    console.log(
+      `PASS: 1 claim won, ${conflictCount} x 409, 1 OPEN cycle, leader=${leaderPreBid?.companyName}`,
+    );
   } else {
     process.exit(1);
   }

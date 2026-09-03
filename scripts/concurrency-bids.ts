@@ -70,7 +70,10 @@ async function main() {
   // 2. N distinct fresh bidders bid in parallel. Maxes must all clear the
   // MID floor + increment (500 + 100 = 600) so no bid dies on the 422 gate.
   const maxes = [700, 900, 1100, 1300, 1500].slice(0, BIDDERS);
-  const names = ['BidderA', 'BidderB', 'BidderC', 'BidderD', 'BidderE', 'BidderF'].slice(0, BIDDERS);
+  const names = ['BidderA', 'BidderB', 'BidderC', 'BidderD', 'BidderE', 'BidderF'].slice(
+    0,
+    BIDDERS,
+  );
 
   console.log(`Firing ${BIDDERS} parallel bids with maxes [${maxes.join(', ')}]...`);
   const outcomes = await Promise.all(maxes.map((max, i) => bidAsNewBidder(plot.id, max, names[i])));
@@ -111,7 +114,10 @@ async function main() {
     const sorted = [...preBids].sort(
       (a, b) => b.maxBidCents - a.maxBidCents || a.createdAt.getTime() - b.createdAt.getTime(),
     );
-    const expectedPrice = Math.min(sorted[0].maxBidCents, sorted[1].maxBidCents + (cycle.incrementCents ?? 0));
+    const expectedPrice = Math.min(
+      sorted[0].maxBidCents,
+      sorted[1].maxBidCents + (cycle.incrementCents ?? 0),
+    );
     const expectedLeader = sorted[0].id;
 
     if (cycle.currentPriceCents !== expectedPrice) {

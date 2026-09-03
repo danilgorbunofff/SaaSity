@@ -75,7 +75,10 @@ test('MOCK_PAYMENTS off: no settlement is faked', async () => {
   delete process.env.MOCK_PAYMENTS;
   try {
     assert.equal(isMockPaymentsEnabled(), false);
-    await assert.rejects(() => capturePreBidAuthorization(CANDIDATES[0], 3100), MockPaymentsDisabledError);
+    await assert.rejects(
+      () => capturePreBidAuthorization(CANDIDATES[0], 3100),
+      MockPaymentsDisabledError,
+    );
     await assert.rejects(() => cancelPreBidAuthorization(CANDIDATES[0]), MockPaymentsDisabledError);
     // Ungated by design (see header): the stub fakes no money movement —
     // it resolves null having authorized nothing and persisted nothing.

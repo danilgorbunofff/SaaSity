@@ -140,10 +140,7 @@ test('cascade: all captures fail -> no winner, everyone marked lost', async () =
   assert.equal(outcome.winnerPreBidId, null);
   assert.equal(outcome.clearingPriceCents, null);
   assert.equal(h.captured.length, 0);
-  assert.deepEqual(
-    h.lost.map((l) => l.id).sort(),
-    ['a', 'b'],
-  );
+  assert.deepEqual(h.lost.map((l) => l.id).sort(), ['a', 'b']);
   for (const l of h.lost) assert.equal(l.reason, 'capture_failed');
   assert.deepEqual(h.cancelled, []);
 });

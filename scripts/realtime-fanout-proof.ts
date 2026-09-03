@@ -84,7 +84,10 @@ class Session {
       if (eq > 0) this.cookies.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
     }
   }
-  async post<T = Record<string, unknown>>(path: string, body: unknown): Promise<{ status: number; json: T }> {
+  async post<T = Record<string, unknown>>(
+    path: string,
+    body: unknown,
+  ): Promise<{ status: number; json: T }> {
     const res = await fetch(`${BASE}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: this.cookieHeader() },
@@ -281,10 +284,17 @@ async function main(): Promise<void> {
       await instanceA.plot.update({
         where: { id: anyMid.id },
         data: {
-          status: 'IDLE', currentCycleId: null, currentLeaderPreBidId: null,
-          tenantPreBidId: null, tenantSince: null, tenantCompanyName: null,
-          tenantTagline: null, tenantTwitterHandle: null, tenantLogoUrl: null,
-          tenantMrrText: null, tenantTargetUrl: null,
+          status: 'IDLE',
+          currentCycleId: null,
+          currentLeaderPreBidId: null,
+          tenantPreBidId: null,
+          tenantSince: null,
+          tenantCompanyName: null,
+          tenantTagline: null,
+          tenantTwitterHandle: null,
+          tenantLogoUrl: null,
+          tenantMrrText: null,
+          tenantTargetUrl: null,
         },
       });
       target = anyMid;
@@ -295,14 +305,19 @@ async function main(): Promise<void> {
     check('SSE anchored on a fresh snapshot', watch.seenSnapshot);
 
     const t0 = Date.now();
-    const claim = await alice.post<{ cycleId?: string; currentPriceCents?: number; youAreLeader?: boolean }>(
-      `/api/plots/${plotId}/claim`,
-      { plotId, ...brand('A'), maxBidCents: 500 },
-    );
+    const claim = await alice.post<{
+      cycleId?: string;
+      currentPriceCents?: number;
+      youAreLeader?: boolean;
+    }>(`/api/plots/${plotId}/claim`, { plotId, ...brand('A'), maxBidCents: 500 });
     check('claim 200 at the floor', claim.status === 200 && claim.json.currentPriceCents === 500);
     const cycleId = claim.json.cycleId!;
     const hit = await watch.waitFor('bid:placed', (d) => d.plotId === plotId, 5000, t0);
-    check('watcher saw bid:placed <1s', !!hit && hit.latencyMs < 1000, hit ? `${hit.latencyMs}ms` : 'no event');
+    check(
+      'watcher saw bid:placed <1s',
+      !!hit && hit.latencyMs < 1000,
+      hit ? `${hit.latencyMs}ms` : 'no event',
+    );
     const outboxRow = await instanceA.realtimeOutbox.findFirst({
       where: { plotId, type: 'bid:placed' },
       orderBy: { seq: 'desc' },
@@ -320,11 +335,21 @@ async function main(): Promise<void> {
         (e.data as { cycleId?: string }).cycleId === cycleId &&
         (e.data as { currentPriceCents?: number }).currentPriceCents === 500,
     );
-    check('exactly-once on the stream after poll ticks (key dedupe)', copies.length === 1, `got ${copies.length}`);
+    check(
+      'exactly-once on the stream after poll ticks (key dedupe)',
+      copies.length === 1,
+      `got ${copies.length}`,
+    );
 
-    section('C · rotation carries the complete next-cycle snapshot (A wins, B leads next, no later bid)');
+    section(
+      'C · rotation carries the complete next-cycle snapshot (A wins, B leads next, no later bid)',
+    );
     const tBid = Date.now();
-    const bidB = await bob.post(`/api/plots/${plotId}/bid`, { plotId, ...brand('B'), maxBidCents: 2000 });
+    const bidB = await bob.post(`/api/plots/${plotId}/bid`, {
+      plotId,
+      ...brand('B'),
+      maxBidCents: 2000,
+    });
     check('bob outbids 200', bidB.status === 200, JSON.stringify(bidB.json));
     const bobHit = await watch.waitFor(
       'bid:placed',
@@ -335,11 +360,17 @@ async function main(): Promise<void> {
     check('watcher saw the outbid tick', !!bobHit);
 
     // D-setup runs pre-resolve: alice is losing but ACTIVE on this cycle.
-    const aliceMe = await alice.get<{ preBidIds: string[]; positions: OwnerPosition[] }>('/api/me/bids');
+    const aliceMe = await alice.get<{ preBidIds: string[]; positions: OwnerPosition[] }>(
+      '/api/me/bids',
+    );
     const aliceActive = (aliceMe.json.positions ?? []).find(
       (p) => p.plotId === plotId && p.cycleId === cycleId && p.status === 'ACTIVE',
     );
-    check('alice holds an ACTIVE position on the live cycle', !!aliceActive, JSON.stringify(aliceMe.json.positions));
+    check(
+      'alice holds an ACTIVE position on the live cycle',
+      !!aliceActive,
+      JSON.stringify(aliceMe.json.positions),
+    );
     const liveNow = await anon.get<{ plots: PlotDto[] }>('/api/plots');
     const livePlot = liveNow.json.plots!.find((p) => p.id === plotId)!;
     const aliceOutbidNow = deriveOutbidFromPositions(
@@ -351,9 +382,15 @@ async function main(): Promise<void> {
       aliceOutbidNow.has(plotId) && livePlot.currentLeaderPreBidId !== aliceActive?.preBidId,
     );
 
-    const pre = await cara.post(`/api/plots/${plotId}/prebid`, { plotId, ...brand('C'), maxBidCents: 4000 });
+    const pre = await cara.post(`/api/plots/${plotId}/prebid`, {
+      plotId,
+      ...brand('C'),
+      maxBidCents: 4000,
+    });
     check('cara queues for the next cycle 200', pre.status === 200, JSON.stringify(pre.json));
-    const queuedRow = await instanceA.preBid.findFirst({ where: { plotId, status: 'ACTIVE', cycleId: null } });
+    const queuedRow = await instanceA.preBid.findFirst({
+      where: { plotId, status: 'ACTIVE', cycleId: null },
+    });
     check('queued row sits outside the running cycle', !!queuedRow);
 
     const tResolve = Date.now();
@@ -363,24 +400,48 @@ async function main(): Promise<void> {
       nextCycleId?: string | null;
     }>(`/api/mock-resolve/${cycleId}`, { mode: 'resolve' });
     check('mock-resolve 200', resolved.status === 200, JSON.stringify(resolved.json));
-    check('bob (highest attached) won', resolved.json.winnerBrand?.companyName === brand('B').companyName);
+    check(
+      'bob (highest attached) won',
+      resolved.json.winnerBrand?.companyName === brand('B').companyName,
+    );
     const done = await watch.waitFor('cycle:resolved', (d) => d.plotId === plotId, 5000, tResolve);
-    check('watcher saw cycle:resolved <1s', !!done && done.latencyMs < 1000, done ? `${done.latencyMs}ms` : 'no event');
+    check(
+      'watcher saw cycle:resolved <1s',
+      !!done && done.latencyMs < 1000,
+      done ? `${done.latencyMs}ms` : 'no event',
+    );
     const data = done?.event.data as unknown as {
       winner: { preBidId: string; brand: { companyName: string | null } } | null;
-      nextCycle: { cycleId: string; endAt: string; currentPriceCents: number | null; leaderPreBidId: string | null } | null;
+      nextCycle: {
+        cycleId: string;
+        endAt: string;
+        currentPriceCents: number | null;
+        leaderPreBidId: string | null;
+      } | null;
     };
-    check('event names the paid winner as tenant (no bidderId)', !!data?.winner?.preBidId && !('bidderId' in (data?.winner ?? {})));
-    check('nextCycle snapshot is complete', !!(
-      data?.nextCycle?.cycleId && data.nextCycle.endAt &&
-      data.nextCycle.currentPriceCents != null && data.nextCycle.leaderPreBidId
-    ), JSON.stringify(data?.nextCycle));
+    check(
+      'event names the paid winner as tenant (no bidderId)',
+      !!data?.winner?.preBidId && !('bidderId' in (data?.winner ?? {})),
+    );
+    check(
+      'nextCycle snapshot is complete',
+      !!(
+        data?.nextCycle?.cycleId &&
+        data.nextCycle.endAt &&
+        data.nextCycle.currentPriceCents != null &&
+        data.nextCycle.leaderPreBidId
+      ),
+      JSON.stringify(data?.nextCycle),
+    );
     check(
       'next leader is the queued pre-bid with NO later bid (A→B rotation)',
       data?.nextCycle?.leaderPreBidId === queuedRow?.id,
       `leader=${data?.nextCycle?.leaderPreBidId} queued=${queuedRow?.id}`,
     );
-    check('winner and next leader are distinct pre-bids', data?.winner?.preBidId !== data?.nextCycle?.leaderPreBidId);
+    check(
+      'winner and next leader are distinct pre-bids',
+      data?.winner?.preBidId !== data?.nextCycle?.leaderPreBidId,
+    );
     const after = await anon.get<{ plots: PlotDto[] }>('/api/plots');
     const rotated = after.json.plots!.find((p) => p.id === plotId)!;
     check(
@@ -390,7 +451,11 @@ async function main(): Promise<void> {
         rotated.currentPriceCents === data?.nextCycle?.currentPriceCents &&
         rotated.currentLeaderPreBidId === data?.nextCycle?.leaderPreBidId &&
         rotated.endAt === data?.nextCycle?.endAt,
-      JSON.stringify({ cycleId: rotated.cycleId, price: rotated.currentPriceCents, leader: rotated.currentLeaderPreBidId }),
+      JSON.stringify({
+        cycleId: rotated.cycleId,
+        price: rotated.currentPriceCents,
+        leader: rotated.currentLeaderPreBidId,
+      }),
     );
     check(
       'paid winner stays the public tenant under the fresh auction',
@@ -398,10 +463,20 @@ async function main(): Promise<void> {
     );
 
     section('D · stale outbid clears from the owner projection after rotation');
-    const aliceAfter = await alice.get<{ preBidIds: string[]; positions: OwnerPosition[] }>('/api/me/bids');
-    const stillActive = (aliceAfter.json.positions ?? []).filter((p) => p.status === 'ACTIVE' && p.plotId === plotId);
-    check('alice has no ACTIVE row on the plot anymore (LOST)', stillActive.length === 0, JSON.stringify(stillActive));
-    const plotsById = new Map((after.json.plots ?? []).map((p) => [p.id, p as unknown as ApiPlotDto]));
+    const aliceAfter = await alice.get<{ preBidIds: string[]; positions: OwnerPosition[] }>(
+      '/api/me/bids',
+    );
+    const stillActive = (aliceAfter.json.positions ?? []).filter(
+      (p) => p.status === 'ACTIVE' && p.plotId === plotId,
+    );
+    check(
+      'alice has no ACTIVE row on the plot anymore (LOST)',
+      stillActive.length === 0,
+      JSON.stringify(stillActive),
+    );
+    const plotsById = new Map(
+      (after.json.plots ?? []).map((p) => [p.id, p as unknown as ApiPlotDto]),
+    );
     const cleared = mergeOutbidPlotIds(
       new Set([plotId]),
       new Set(),
@@ -422,8 +497,14 @@ async function main(): Promise<void> {
     });
     const pruned = await pruneOutbox();
     check('prune reports work', pruned >= 1, `pruned=${pruned}`);
-    check('aged row is gone', (await instanceA.realtimeOutbox.findUnique({ where: { seq: aged.seq } })) == null);
-    check('fresh live rows survive', (await instanceA.realtimeOutbox.findFirst({ where: { plotId } })) != null);
+    check(
+      'aged row is gone',
+      (await instanceA.realtimeOutbox.findUnique({ where: { seq: aged.seq } })) == null,
+    );
+    check(
+      'fresh live rows survive',
+      (await instanceA.realtimeOutbox.findFirst({ where: { plotId } })) != null,
+    );
 
     section('F · dropped stream re-anchors on a fresh snapshot');
     watch.close();
@@ -437,7 +518,11 @@ async function main(): Promise<void> {
     // jar — exactly two tabs of the same browser.
     const watch3 = await Observer.open('watch3');
     const tTwoTabs = Date.now();
-    const bidG = await bob.post(`/api/plots/${plotId}/bid`, { plotId, ...brand('B2'), maxBidCents: 4500 });
+    const bidG = await bob.post(`/api/plots/${plotId}/bid`, {
+      plotId,
+      ...brand('B2'),
+      maxBidCents: 4500,
+    });
     check('second-tab bid 200', bidG.status === 200, JSON.stringify(bidG.json));
     const isNewTick = (d: Record<string, unknown>) =>
       d.plotId === plotId && ((d as { currentPriceCents?: number }).currentPriceCents ?? 0) > 500;
@@ -447,7 +532,8 @@ async function main(): Promise<void> {
     check('tab 2 saw the same bid <1s', !!seen3 && seen3.latencyMs < 1000);
     check(
       'both tabs converged on identical payloads (no per-tab skew)',
-      !!seen2 && !!seen3 &&
+      !!seen2 &&
+        !!seen3 &&
         (seen2.event.data as { leaderPreBidId?: string }).leaderPreBidId ===
           (seen3.event.data as { leaderPreBidId?: string }).leaderPreBidId &&
         (seen2.event.data as { cycleId?: string }).cycleId ===

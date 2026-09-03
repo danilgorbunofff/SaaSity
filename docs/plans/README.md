@@ -10,14 +10,23 @@ Roadmap for **SaaSity**: a 10x10 isometric cyberpunk city where SaaS founders bi
 
 | # | Milestone | Plan | Status |
 |---|-----------|------|--------|
-| 0 | Scaffold & Data Layer | [00-scaffold-and-data-layer/PLAN.md](00-scaffold-and-data-layer/PLAN.md) | ⚪ Not started |
-| 1 | 3D City | [01-3d-city/PLAN.md](01-3d-city/PLAN.md) | ⚪ Not started |
-| 2 | Auctions & Realtime | [02-reservations-and-realtime/PLAN.md](02-reservations-and-realtime/PLAN.md) | ⚪ Not started |
-| 3 | Stripe Pre-Auth & Capture | [03-stripe-payments/PLAN.md](03-stripe-payments/PLAN.md) | ⚪ Not started |
+| 0 | Scaffold & Data Layer | [00-scaffold-and-data-layer/PLAN.md](00-scaffold-and-data-layer/PLAN.md) | 🟡 In progress (implemented + locally verified; Vercel deploy boxes open) |
+| 1 | 3D City | [01-3d-city/PLAN.md](01-3d-city/PLAN.md) | 🟡 In progress (shipped + remediation hardening; preview/real-device proof pending) |
+| 2 | Auctions & Realtime | [02-reservations-and-realtime/PLAN.md](02-reservations-and-realtime/PLAN.md) | 🟡 In progress (2.1–2.5 implemented + locally verified; preview proof pending) |
+| 3 | Stripe Pre-Auth & Capture | [03-stripe-payments/PLAN.md](03-stripe-payments/PLAN.md) | 🔴 Blocked (Parts 1–4 gate — see remediation pack) |
 | 4 | Landing & Polish | [04-landing-and-polish/PLAN.md](04-landing-and-polish/PLAN.md) | ⚪ Not started |
 | 5 | Launch & Operations | [05-launch-and-operations/PLAN.md](05-launch-and-operations/PLAN.md) | ⚪ Not started |
 
 **Status legend:** ⚪ Not started · 🟡 In progress · 🟢 Done · 🔴 Blocked
+
+**Verification states (Part 7 `status-governance-drift`):** a phase marked
+Done means *implemented + locally verified* (unit suite, `tsc`, `next build`,
+proof scripts against a local prod-mode server) unless its evidence note says
+otherwise. *Preview verified* and *production verified* are separate states —
+no M0–M2 phase claims either yet (no deployment exists; see
+[Part 7](../reviews/m0-m2-remediation/part-07-testing-release-documentation.md)).
+Boxes stay open until the evidence they name exists, even inside otherwise-Done
+phases.
 
 **Note on folder names:** milestone folders (`02-reservations-and-realtime`, `03-stripe-payments`) keep their original slugs to avoid renumbering every cross-file link; only their *content and displayed titles* changed to the auction/lease model. Treat `02-reservations-and-realtime` as "Auctions & Realtime" and `03-stripe-payments` as "Stripe Pre-Auth & Capture" throughout.
 

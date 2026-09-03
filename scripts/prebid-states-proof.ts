@@ -47,7 +47,10 @@ function check(name: string, ok: boolean, detail = ''): void {
 class Jar {
   private cookies: string[] = [];
 
-  async post(path: string, body: unknown): Promise<{ status: number; json: Record<string, unknown> }> {
+  async post(
+    path: string,
+    body: unknown,
+  ): Promise<{ status: number; json: Record<string, unknown> }> {
     const res = await fetch(`${BASE}${path}`, {
       method: 'POST',
       headers: {
@@ -152,7 +155,11 @@ async function main(): Promise<void> {
       maxBidCents: 1000,
     });
     check('IDLE plot -> 409', res.status === 409, `status=${res.status}`);
-    check('IDLE conflict code is claim-first', res.json.code === 'claim-first', JSON.stringify(res.json));
+    check(
+      'IDLE conflict code is claim-first',
+      res.json.code === 'claim-first',
+      JSON.stringify(res.json),
+    );
     check('IDLE conflict names the plot', res.json.plotId === idlePlot);
     check('IDLE queues nothing', (await queuedCount(idlePlot)) === 0);
   }
@@ -169,7 +176,11 @@ async function main(): Promise<void> {
       ...brand('R'),
       maxBidCents: 1000,
     });
-    check('RESOLVING handover -> 200', res.status === 200, `status=${res.status} ${JSON.stringify(res.json)}`);
+    check(
+      'RESOLVING handover -> 200',
+      res.status === 200,
+      `status=${res.status} ${JSON.stringify(res.json)}`,
+    );
     check('handover response flags next-cycle queue', res.json.queuedForNextCycle === true);
     const row = await prisma.preBid.findFirstOrThrow({ where: { plotId: resolvingPlot } });
     check('handover row queued with cycleId null', row.cycleId === null && row.status === 'ACTIVE');
@@ -201,7 +212,11 @@ async function main(): Promise<void> {
     check('LIVE response carries plotStatus LIVE', first.json.plotStatus === 'LIVE');
     const second = await jar.post(`/api/plots/${livePlot}/prebid`, body);
     check('same-max repeat -> 409', second.status === 409, `status=${second.status}`);
-    check('repeat code is not-higher', second.json.code === 'not-higher', JSON.stringify(second.json));
+    check(
+      'repeat code is not-higher',
+      second.json.code === 'not-higher',
+      JSON.stringify(second.json),
+    );
   }
 
   // The directed action works: claim-first -> claim over HTTP -> pre-bid queues.
@@ -212,7 +227,11 @@ async function main(): Promise<void> {
       ...brand('C'),
       maxBidCents: CFG.floorCents,
     });
-    check('claim after claim-first succeeds', claim.status === 200, `status=${claim.status} ${JSON.stringify(claim.json)}`);
+    check(
+      'claim after claim-first succeeds',
+      claim.status === 200,
+      `status=${claim.status} ${JSON.stringify(claim.json)}`,
+    );
     const retry = await jar.post(`/api/plots/${idlePlot}/prebid`, {
       plotId: idlePlot,
       ...brand('C2'),
@@ -230,7 +249,9 @@ async function main(): Promise<void> {
   }
   console.log('\ncleaned up 4 proof plot(s)');
 
-  console.log(failures === 0 ? '\nPASS: pre-bid states behave per state' : `\nFAILED: ${failures} check(s)`);
+  console.log(
+    failures === 0 ? '\nPASS: pre-bid states behave per state' : `\nFAILED: ${failures} check(s)`,
+  );
   if (failures > 0) process.exitCode = 1;
 }
 

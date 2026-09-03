@@ -1,7 +1,7 @@
 # Milestone 0 — Scaffold & Data Layer
 
 **Back:** [All milestones](../README.md) · **Next:** [01 · 3D City](../01-3d-city/PLAN.md)
-**Status:** ✅ Done (2026-09-01)
+**Status:** 🟡 In progress (implementation + local verification done 2026-09-01; Vercel deploy + prod-database exit boxes still open — see phases 0.1–0.3)
 
 ## Objective
 
@@ -37,10 +37,10 @@ Stand up the project skeleton and the entire data layer so every later milestone
 
 ## Definition of done
 
-- [ ] Fresh clone + install + migrate + seed works locally in one flow
-- [ ] Seed produces exactly 49 plots and covers all 100 grid cells without overlap (verified by a check script)
-- [ ] `/api/plots` returns correct data in production build
-- [ ] No secrets in repo; env samples documented
+- [x] Fresh clone + install + migrate + seed works locally in one flow — proven continuously: CI (`ci.yml`) runs `npm ci` (postinstall → `prisma generate`) + drift check + `migrate deploy` + `db:seed` + `tsc` + lint + tests + `next build` on a fresh runner every push; same commands in README "Getting started"
+- [x] Seed produces exactly 49 plots and covers all 100 grid cells without overlap (verified by a check script) — `checkGridIntegrity` aborts the seed itself (`prisma/seed.ts`) and `tests/city/seed-check.test.ts` pins 49/100/0-overlap in CI
+- [x] `/api/plots` returns correct data in production build — verified against a local prod-mode server (`next build` + `next start`; e2e-full-loop 38 assertions). Preview/production deployment proof pending (no deployment exists — Part 7)
+- [x] No secrets in repo; env samples documented — `.env*` gitignored except `.env.example`; full per-variable reference in `.env.example` + README table + `docs/deployment.md` §2
 
 ## Dependencies
 

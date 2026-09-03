@@ -18,7 +18,12 @@
 import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client';
-import { lockPlot, upsertPreBid, attachPreBidsToCycle, type Tx } from '../src/server/auction/engine';
+import {
+  lockPlot,
+  upsertPreBid,
+  attachPreBidsToCycle,
+  type Tx,
+} from '../src/server/auction/engine';
 import { TIERS } from '../src/lib/tiers';
 
 const prisma = new PrismaClient({
@@ -89,7 +94,10 @@ async function locked<T>(plotId: string, fn: (tx: Tx) => Promise<T>): Promise<T>
 }
 
 async function readMax(id: string): Promise<{ max: number; cycleId: string | null }> {
-  const row = await prisma.preBid.findUniqueOrThrow({ where: { id }, select: { maxBidCents: true, cycleId: true } });
+  const row = await prisma.preBid.findUniqueOrThrow({
+    where: { id },
+    select: { maxBidCents: true, cycleId: true },
+  });
   return { max: row.maxBidCents, cycleId: row.cycleId };
 }
 
@@ -105,7 +113,13 @@ async function scenarioClaimAttach(): Promise<void> {
   // Claim opens a fresh cycle; the claimer's submit is the floor.
   const cycleId = await openCycle(plotId);
   const attachedId = await locked(plotId, (tx) =>
-    upsertPreBid(tx, { plotId, cycleId, bidderId: bidder, maxBidCents: CFG.floorCents, brand: BRAND }),
+    upsertPreBid(tx, {
+      plotId,
+      cycleId,
+      bidderId: bidder,
+      maxBidCents: CFG.floorCents,
+      brand: BRAND,
+    }),
   );
   check('same row attached (no duplicate)', attachedId === queuedId);
   const row = await readMax(queuedId);
@@ -188,8 +202,14 @@ async function scenarioBulkAttach(): Promise<void> {
     upsertPreBid(tx, { plotId, cycleId: null, bidderId: b, maxBidCents: 2200, brand: BRAND }),
   );
   await locked(plotId, (tx) => attachPreBidsToCycle(tx, [idA, idB], cycleId));
-  check('A attached with max intact', (await readMax(idA)).cycleId === cycleId && (await readMax(idA)).max === 1800);
-  check('B attached with max intact', (await readMax(idB)).cycleId === cycleId && (await readMax(idB)).max === 2200);
+  check(
+    'A attached with max intact',
+    (await readMax(idA)).cycleId === cycleId && (await readMax(idA)).max === 1800,
+  );
+  check(
+    'B attached with max intact',
+    (await readMax(idB)).cycleId === cycleId && (await readMax(idB)).max === 2200,
+  );
 }
 
 async function cleanup(): Promise<void> {
@@ -214,7 +234,11 @@ async function main(): Promise<void> {
   await scenarioUpgrade();
   await scenarioBulkAttach();
   await cleanup();
-  console.log(failures === 0 ? '\nPASS: upward-only maxima hold on every path' : `\nFAILED: ${failures} check(s)`);
+  console.log(
+    failures === 0
+      ? '\nPASS: upward-only maxima hold on every path'
+      : `\nFAILED: ${failures} check(s)`,
+  );
   if (failures > 0) process.exitCode = 1;
 }
 

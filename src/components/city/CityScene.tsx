@@ -30,6 +30,8 @@ import { TopStrip } from './hud/TopStrip';
 import { DetailCard } from './hud/DetailCard';
 import { BidModal } from './hud/BidModal';
 import { MyLeasesPill } from './hud/MyLeasesPill';
+import { AuctionList } from './hud/AuctionList';
+import { HelpCard } from './hud/HelpCard';
 import { Minimap } from './hud/Minimap';
 import { OutbidToast } from './hud/OutbidToast';
 import { PlotA11yList } from './hud/PlotA11yList';
@@ -271,9 +273,7 @@ function CityPlots() {
             </group>
           );
         })}
-      {DEBUG_OVERLAY && (
-        <DebugOverlay seed={seed} />
-      )}
+      {DEBUG_OVERLAY && <DebugOverlay seed={seed} />}
     </group>
   );
 }
@@ -297,8 +297,8 @@ function PerfStatsChip() {
         data-testid="perf-stats"
         className="rounded border border-[#12303a] bg-[#050508]/90 px-2 py-1 font-mono text-[10px] leading-tight text-[#9fd8e6]"
       >
-        calls {info.calls} · tris {info.triangles} · geo {mem.geometries} · tex{' '}
-        {mem.textures} · prog {gl.info.programs ? gl.info.programs.length : 0}
+        calls {info.calls} · tris {info.triangles} · geo {mem.geometries} · tex {mem.textures} ·
+        prog {gl.info.programs ? gl.info.programs.length : 0}
       </div>
     </Html>
   );
@@ -306,73 +306,141 @@ function PerfStatsChip() {
 
 export function CityScene() {
   const clearSelection = useCityStore((s) => s.setSelectedPlotId);
+  const selectedPlotId = useCityStore((s) => s.selectedPlotId);
+
+  // Part 6 checklist (URL state): selection deep-links via ?plot=. Refresh,
+  // back/forward, and shared links restore the detail card; replaceState
+  // keeps history clean while orbiting between plots.
+  useEffect(() => {
+    try {
+      const id = new URLSearchParams(window.location.search).get('plot');
+      if (id) useCityStore.getState().setSelectedPlotId(id);
+    } catch {
+      // Non-browser or malformed URL: scene works unlinked.
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      if (selectedPlotId) url.searchParams.set('plot', selectedPlotId);
+      else url.searchParams.delete('plot');
+      window.history.replaceState(null, '', url);
+    } catch {
+      // History unavailable (tests/SSR edge): selection still works in-memory.
+    }
+  }, [selectedPlotId]);
   return (
-    <div className="absolute inset-0">
-    <Canvas
-      dpr={IS_LOW_POWER ? [1, 1.5] : [1, 2]}
-      gl={{ antialias: !IS_LOW_POWER, powerPreference: 'high-performance' }}
-      camera={{
-        // Explicit ortho — R3F defaults to a PerspectiveCamera, which
-        // ignores `zoom` entirely (phase-01 latent bug, fixed in 1.2).
-        zoom: CAMERA.zoom,
-        position: [...CAMERA.position] as [number, number, number],
-        near: 0.1,
-        far: 400,
-      }}
-      orthographic
-      style={{ background: SCENE.background }}
-      onPointerMissed={() => clearSelection(null)}
-    >
-      <color attach="background" args={[SCENE.background]} />
-      <fog attach="fog" args={[SCENE.background, SCENE.fogNear, SCENE.fogFar]} />
+    <div id="city-root" className="absolute inset-0">
+      <a href="#city-main" className="skip-link">
+        Skip to city controls
+      </a>
+      {/* Canvas name (a11y-structure): the WebGL scene is decorative for
+          assistive tech — the minimap, auction list, and detail card are the
+          operable equivalents. */}
+      <div
+        role="img"
+        aria-label="Isometric neon city of 49 billboard towers. Use the RADAR minimap, the Auctions list, or the help panel to navigate and bid."
+        className="absolute inset-0"
+      >
+        <Canvas
+          dpr={IS_LOW_POWER ? [1, 1.5] : [1, 2]}
+          gl={{ antialias: !IS_LOW_POWER, powerPreference: 'high-performance' }}
+          camera={{
+            // Explicit ortho — R3F defaults to a PerspectiveCamera, which
+            // ignores `zoom` entirely (phase-01 latent bug, fixed in 1.2).
+            zoom: CAMERA.zoom,
+            position: [...CAMERA.position] as [number, number, number],
+            near: 0.1,
+            far: 400,
+          }}
+          orthographic
+          style={{ background: SCENE.background }}
+          onPointerMissed={() => clearSelection(null)}
+        >
+          <color attach="background" args={[SCENE.background]} />
+          <fog attach="fog" args={[SCENE.background, SCENE.fogNear, SCENE.fogFar]} />
 
-      <ambientLight intensity={LIGHTS.ambient} />
-      <directionalLight
-        position={LIGHTS.key.position}
-        intensity={LIGHTS.key.intensity}
-        color={LIGHTS.key.color}
-      />
-      <directionalLight
-        position={LIGHTS.rimCyan.position}
-        intensity={LIGHTS.rimCyan.intensity}
-        color={LIGHTS.rimCyan.color}
-      />
-      <directionalLight
-        position={LIGHTS.rimMagenta.position}
-        intensity={LIGHTS.rimMagenta.intensity}
-        color={LIGHTS.rimMagenta.color}
-      />
+          <ambientLight intensity={LIGHTS.ambient} />
+          <directionalLight
+            position={LIGHTS.key.position}
+            intensity={LIGHTS.key.intensity}
+            color={LIGHTS.key.color}
+          />
+          <directionalLight
+            position={LIGHTS.rimCyan.position}
+            intensity={LIGHTS.rimCyan.intensity}
+            color={LIGHTS.rimCyan.color}
+          />
+          <directionalLight
+            position={LIGHTS.rimMagenta.position}
+            intensity={LIGHTS.rimMagenta.intensity}
+            color={LIGHTS.rimMagenta.color}
+          />
 
-      {/* Metals (metalness 0.6-0.85) need an env map to be visible from all
+          {/* Metals (metalness 0.6-0.85) need an env map to be visible from all
           angles — directional lights alone only show specular glints. This is
           a procedural in-scene env (no network fetch), baked once. */}
-      <Environment resolution={IS_LOW_POWER ? 64 : 128} frames={1}>
-        <color attach="background" args={['#05070d']} />
-        <Lightformer form="rect" intensity={2.4} color={LIGHTS.key.color} position={[6, 9, 4]} scale={[10, 6, 1]} target={[0, 0, 0]} />
-        <Lightformer form="rect" intensity={1.6} color={NEON.cyan} position={[-8, 4, -6]} scale={[8, 4, 1]} target={[0, 0, 0]} />
-        <Lightformer form="rect" intensity={1.1} color={NEON.magenta} position={[8, 3, -7]} scale={[7, 3, 1]} target={[0, 0, 0]} />
-        <Lightformer form="ring" intensity={1.2} color="#8fa8c8" position={[0, -6, 0]} scale={12} target={[0, 0, 0]} />
-      </Environment>
+          <Environment resolution={IS_LOW_POWER ? 64 : 128} frames={1}>
+            <color attach="background" args={['#05070d']} />
+            <Lightformer
+              form="rect"
+              intensity={2.4}
+              color={LIGHTS.key.color}
+              position={[6, 9, 4]}
+              scale={[10, 6, 1]}
+              target={[0, 0, 0]}
+            />
+            <Lightformer
+              form="rect"
+              intensity={1.6}
+              color={NEON.cyan}
+              position={[-8, 4, -6]}
+              scale={[8, 4, 1]}
+              target={[0, 0, 0]}
+            />
+            <Lightformer
+              form="rect"
+              intensity={1.1}
+              color={NEON.magenta}
+              position={[8, 3, -7]}
+              scale={[7, 3, 1]}
+              target={[0, 0, 0]}
+            />
+            <Lightformer
+              form="ring"
+              intensity={1.2}
+              color="#8fa8c8"
+              position={[0, -6, 0]}
+              scale={12}
+              target={[0, 0, 0]}
+            />
+          </Environment>
 
-      {!PERF_MINIMAL && <TerracedHill showGrid />}
-      <CityPlots />
+          {!PERF_MINIMAL && <TerracedHill showGrid />}
+          <CityPlots />
 
-      <DataBinder />
-      <RealtimeBinder />
-      <LoadingChip />
-      <ErrorChip />
-      <PerfStatsChip />
-      <ControlsRig />
-      </Canvas>
+          <DataBinder />
+          <RealtimeBinder />
+          <LoadingChip />
+          <ErrorChip />
+          <PerfStatsChip />
+          <ControlsRig />
+        </Canvas>
+      </div>
 
       {/* Phase 1.4 DOM HUD — siblings of the WebGL canvas */}
-      <TopStrip />
-      <DetailCard />
-      <MyLeasesPill />
-      <Minimap />
-      <OutbidToast />
-      <PlotA11yList />
-      <BidModal />
+      <main id="city-main" aria-label="City controls">
+        <h1 className="sr-only">SaaSity — bid for billboard leases in a cyber city</h1>
+        <TopStrip />
+        <DetailCard />
+        <MyLeasesPill />
+        <AuctionList />
+        <HelpCard />
+        <Minimap />
+        <OutbidToast />
+        <PlotA11yList />
+        <BidModal />
+      </main>
     </div>
   );
 }

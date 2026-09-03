@@ -47,7 +47,10 @@ async function persistEvent(event: RealtimeEvent): Promise<void> {
 
 function sink(event: RealtimeEvent): void {
   void persistEvent(event).catch((err) => {
-    console.error('[realtime:outbox] persist failed; local clients delivered, cross-instance copy lost', err);
+    console.error(
+      '[realtime:outbox] persist failed; local clients delivered, cross-instance copy lost',
+      err,
+    );
   });
 }
 

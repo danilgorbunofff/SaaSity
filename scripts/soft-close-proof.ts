@@ -17,7 +17,13 @@
 import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client';
-import { lockPlot, applySoftClose, resolveCycle, upsertPreBid, type Tx } from '../src/server/auction/engine';
+import {
+  lockPlot,
+  applySoftClose,
+  resolveCycle,
+  upsertPreBid,
+  type Tx,
+} from '../src/server/auction/engine';
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
@@ -119,11 +125,7 @@ async function main() {
           softCloseExtensions: 41, // event count is audit-only; budget comes from endAt math
         },
       });
-      const first = await applySoftClose(
-        tx,
-        cycle,
-        new Date(cycle.endAt.getTime() - 30_000),
-      );
+      const first = await applySoftClose(tx, cycle, new Date(cycle.endAt.getTime() - 30_000));
       const reloaded = await tx.auctionCycle.findUniqueOrThrow({ where: { id: cycle.id } });
       const second = await applySoftClose(
         tx,
@@ -166,7 +168,9 @@ async function main() {
     });
     if (!t.r.extended) fail('C2: expected extension 10s before end');
     else if (t.r.newEndAt.getTime() - (now0 + 60 * 60_000) !== 170_000)
-      fail(`C2: push must be exactly +170s, got ${t.r.newEndAt.getTime() - (now0 + 60 * 60_000)}ms`);
+      fail(
+        `C2: push must be exactly +170s, got ${t.r.newEndAt.getTime() - (now0 + 60 * 60_000)}ms`,
+      );
     else if (t.extensions !== 1) fail(`C2: event counter must increment by 1, got ${t.extensions}`);
     else console.log('C2 PASS: sub-minute push accounted to the millisecond');
   }
@@ -254,7 +258,8 @@ async function main() {
       });
       const marked = r.ticks.filter((t) => t.triggeredExtension);
       if (!r.softClose.extended) fail('E1: expected the in-window bid to extend');
-      else if (marked.length !== 1) fail(`E1: expected exactly 1 marked tick, got ${marked.length}`);
+      else if (marked.length !== 1)
+        fail(`E1: expected exactly 1 marked tick, got ${marked.length}`);
       else if (marked[0].bidderId !== 'proof-bidder-b')
         fail(`E1: marked tick names ${marked[0].bidderId}, expected the challenger`);
       else console.log('E1 PASS: in-window extension attributed to the challenger tick');
@@ -344,8 +349,13 @@ async function main() {
       });
       const marked = r.ticks.filter((t) => t.triggeredExtension);
       if (!r.softClose.extended) fail('E3: expected the in-window raise to extend');
-      else if (marked.length !== 1) fail(`E3: expected exactly 1 marked tick, got ${marked.length}`);
-      else if (marked[0].bidderId !== 'proof-bidder-a' || marked[0].amountCents !== 750 || marked[0].isProxy)
+      else if (marked.length !== 1)
+        fail(`E3: expected exactly 1 marked tick, got ${marked.length}`);
+      else if (
+        marked[0].bidderId !== 'proof-bidder-a' ||
+        marked[0].amountCents !== 750 ||
+        marked[0].isProxy
+      )
         fail(
           `E3: orphan tick must name the requester at 750 as a human tick, got ${marked[0].bidderId}/${marked[0].amountCents}/isProxy=${marked[0].isProxy}`,
         );
@@ -390,7 +400,8 @@ async function main() {
       if (!r.allExtended) fail('F1: every rapid in-window bid must extend');
       else if (!r.strictlyIncreasing) fail('F1: endAt must strictly increase');
       else if (overCap) fail('F1: rapid bids blew past the cap');
-      else if (r.final.softCloseExtensions !== 5) fail(`F1: counter must be 5, got ${r.final.softCloseExtensions}`);
+      else if (r.final.softCloseExtensions !== 5)
+        fail(`F1: counter must be 5, got ${r.final.softCloseExtensions}`);
       else console.log('F1 PASS: rapid bids each extend once, cap respected');
     }
 
@@ -413,14 +424,27 @@ async function main() {
       const r = await prisma.$transaction(async (tx) => {
         await lockPlot(tx, PROOF_PLOT_ID);
         const endAt = base;
-        const justOutside = await applySoftClose(tx, await mk(tx, endAt), new Date(endAt - WINDOW - 1));
-        const edgeZeroPush = await applySoftClose(tx, await mk(tx, endAt), new Date(endAt - WINDOW));
-        const justInside = await applySoftClose(tx, await mk(tx, endAt), new Date(endAt - WINDOW + 50));
+        const justOutside = await applySoftClose(
+          tx,
+          await mk(tx, endAt),
+          new Date(endAt - WINDOW - 1),
+        );
+        const edgeZeroPush = await applySoftClose(
+          tx,
+          await mk(tx, endAt),
+          new Date(endAt - WINDOW),
+        );
+        const justInside = await applySoftClose(
+          tx,
+          await mk(tx, endAt),
+          new Date(endAt - WINDOW + 50),
+        );
         const atEnd = await applySoftClose(tx, await mk(tx, endAt), new Date(endAt));
         return { justOutside, edgeZeroPush, justInside, atEnd };
       });
       if (r.justOutside.extended) fail('F2: 1ms outside the window must not extend');
-      else if (r.edgeZeroPush.extended) fail('F2: window-edge exact hit grants zero push and must report false');
+      else if (r.edgeZeroPush.extended)
+        fail('F2: window-edge exact hit grants zero push and must report false');
       else if (!r.justInside.extended) fail('F2: 50ms inside the window must extend');
       else if (r.justInside.newEndAt.getTime() !== base + 50)
         fail('F2: inside grant must equal receivedAt+3min exactly');
@@ -452,7 +476,8 @@ async function main() {
         return { first, second };
       });
       if (!r.first.extended) fail('F3: first call must extend');
-      else if (r.second.extended) fail('F3: second call with the same timestamp must not extend again');
+      else if (r.second.extended)
+        fail('F3: second call with the same timestamp must not extend again');
       else if (r.second.newEndAt.getTime() !== r.first.newEndAt.getTime())
         fail('F3: second call must leave endAt untouched');
       else console.log('F3 PASS: one request timestamp attributes at most one extension');

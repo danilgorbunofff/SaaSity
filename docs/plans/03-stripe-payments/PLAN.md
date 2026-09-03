@@ -1,7 +1,7 @@
 # Milestone 3 — Stripe Pre-Auth & Capture
 
 **Prev:** [02 · Auctions & Realtime](../02-reservations-and-realtime/PLAN.md) · **Next:** [04 · Landing & Polish](../04-landing-and-polish/PLAN.md)
-**Status:** ⚪ Not started
+**Status:** 🔴 Blocked — do not begin real Stripe capture until remediation Parts 1–4 are complete (rule in the [remediation pack](../../reviews/m0-m2-remediation/README.md)); Part 4 row still open and Part 6 uncommitted as of Part 7
 
 > Folder kept as `03-stripe-payments` to avoid renumbering every cross-file link — read this milestone as **"Stripe Pre-Auth & Capture"** throughout.
 

@@ -179,9 +179,7 @@ async function settleAndRotate(args: {
       orderBy: [{ maxBidCents: 'desc' }, { createdAt: 'asc' }],
     });
     const winnerRow =
-      winnerPreBidId != null
-        ? remaining.find((p) => p.id === winnerPreBidId) ?? null
-        : null;
+      winnerPreBidId != null ? (remaining.find((p) => p.id === winnerPreBidId) ?? null) : null;
 
     await tx.auctionCycle.update({
       where: { id: cycleId },
@@ -210,9 +208,7 @@ async function settleAndRotate(args: {
       });
     }
 
-    const loserIds = remaining
-      .filter((p) => p.id !== winnerPreBidId)
-      .map((p) => p.id);
+    const loserIds = remaining.filter((p) => p.id !== winnerPreBidId).map((p) => p.id);
     if (loserIds.length > 0) {
       await tx.preBid.updateMany({
         where: { id: { in: loserIds } },
@@ -442,7 +438,11 @@ export async function resolveOneCycle(cycleId: string, now: Date): Promise<Outco
       if (!plot) return null;
 
       const fresh = await resolveCycle(tx, cycle, {});
-      if (fresh && cycle.currentPriceCents !== null && fresh.priceCents !== cycle.currentPriceCents) {
+      if (
+        fresh &&
+        cycle.currentPriceCents !== null &&
+        fresh.priceCents !== cycle.currentPriceCents
+      ) {
         console.warn(
           `[auction:worker] price disagreement on cycle ${cycle.id}: stored=${cycle.currentPriceCents} fresh=${fresh.priceCents}`,
         );
@@ -470,9 +470,7 @@ export async function resolveOneCycle(cycleId: string, now: Date): Promise<Outco
         // Shared second-price math — the same formula computeResolution
         // uses, so the cascade can never drift from the engine's pricing.
         const highestOther =
-          remaining.length === 0
-            ? null
-            : remaining.reduce((m, r) => Math.max(m, r.maxBidCents), 0);
+          remaining.length === 0 ? null : remaining.reduce((m, r) => Math.max(m, r.maxBidCents), 0);
         return secondPriceFor(
           candidate.maxBidCents,
           highestOther,
@@ -511,7 +509,8 @@ export async function resolveOneCycle(cycleId: string, now: Date): Promise<Outco
     });
 
     if (settled === null) return null;
-    const { nextCycleId, nextEndAt, openingPriceCents, nextLeaderPreBidId, nextCurrentPriceCents } = settled;
+    const { nextCycleId, nextEndAt, openingPriceCents, nextLeaderPreBidId, nextCurrentPriceCents } =
+      settled;
 
     const outcome: Outcome = buildOutcome({
       plotId,

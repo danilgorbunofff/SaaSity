@@ -19,6 +19,7 @@ export function MyLeasesPill() {
   const [open, setOpen] = useState(false);
   const listRef = useRef<HTMLUListElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   // Close when clicking outside the dropdown.
   useEffect(() => {
@@ -30,7 +31,23 @@ export function MyLeasesPill() {
     return () => window.removeEventListener('mousedown', onDown);
   }, [open]);
 
-  // Keyboard: arrows move focus, Enter handled by the button itself.
+  // Part 6 `keyboard-fallback`: focus moves INTO the popup on open and back
+  // to the trigger on close — keyboard users are never stranded.
+  useEffect(() => {
+    if (!open) return;
+    const t = window.setTimeout(() => {
+      listRef.current?.querySelector<HTMLButtonElement>('button[data-lease-item]')?.focus();
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [open]);
+
+  const closeAndRestore = () => {
+    setOpen(false);
+    window.setTimeout(() => triggerRef.current?.focus(), 0);
+  };
+
+  // Keyboard: arrows/Home/End move focus, Enter handled by the button
+  // itself, Escape closes and restores focus to the trigger.
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (!open) return;
     const items = listRef.current?.querySelectorAll<HTMLButtonElement>('button[data-lease-item]');
@@ -42,19 +59,27 @@ export function MyLeasesPill() {
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       items[(current - 1 + items.length) % items.length]?.focus();
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      items[0]?.focus();
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      items[items.length - 1]?.focus();
     } else if (e.key === 'Escape') {
-      setOpen(false);
+      e.preventDefault();
+      closeAndRestore();
     }
   };
 
   return (
     <div ref={wrapRef} data-testid="hud-my-leases" className="absolute left-3 top-3 z-20">
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => (open ? closeAndRestore() : setOpen(true))}
         aria-expanded={open}
-        aria-haspopup="listbox"
-        className="rounded-full border border-[#00f0ff]/40 bg-[#050508]/85 px-3 py-1.5 font-mono text-[11px] tracking-wide text-[#00f0ff] shadow-[0_0_18px_rgba(0,240,255,0.12)] backdrop-blur-sm hover:border-[#00f0ff]"
+        aria-haspopup="menu"
+        className="min-h-11 rounded-full border border-[#00f0ff]/40 bg-[#050508]/85 px-3 py-1.5 font-mono text-xs tracking-wide text-[#00f0ff] shadow-[0_0_18px_rgba(0,240,255,0.12)] backdrop-blur-sm hover:border-[#00f0ff] focus-visible:outline-2 focus-visible:outline-[#00f0ff]"
       >
         🏢 My Leases ({leases.length}) ▾
       </button>
@@ -71,9 +96,15 @@ export function MyLeasesPill() {
               type="button"
               onClick={() => {
                 pulseIdlePlots();
-                setOpen(false);
+                closeAndRestore();
               }}
-              className="mt-2 w-full rounded border border-[#00f0ff]/50 px-2 py-1.5 font-mono text-[11px] uppercase tracking-wider text-[#00f0ff] hover:bg-[#00f0ff]/10"
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  closeAndRestore();
+                }
+              }}
+              className="mt-2 min-h-11 w-full rounded border border-[#00f0ff]/50 px-2 py-1.5 font-mono text-xs uppercase tracking-wider text-[#00f0ff] hover:bg-[#00f0ff]/10 focus-visible:outline-2 focus-visible:outline-[#00f0ff]"
             >
               Highlight idle plots
             </button>
@@ -81,23 +112,23 @@ export function MyLeasesPill() {
         ) : (
           <ul
             ref={listRef}
-            role="listbox"
+            role="menu"
             aria-label="My active leases"
             onKeyDown={onKeyDown}
-            className="absolute left-0 top-full mt-1 w-56 space-y-1 rounded-lg border border-[#12303a] bg-[#050508]/95 p-2 backdrop-blur-sm"
+            className="absolute left-0 top-full mt-1 w-56 max-w-[calc(100vw-1.5rem)] space-y-1 rounded-lg border border-[#12303a] bg-[#050508]/95 p-2 backdrop-blur-sm"
           >
             {leases.map(({ plot }) => (
-              <li key={plot.id}>
+              <li key={plot.id} role="none">
                 <button
                   type="button"
                   data-lease-item
-                  role="option"
-                  aria-selected="false"
+                  role="menuitem"
                   onClick={() => {
                     setOpen(false);
+                    triggerRef.current?.focus();
                     flyToPlot(plot.id);
                   }}
-                  className="w-full rounded px-2 py-1.5 text-left font-mono text-[11px] text-[#9fd8e6] hover:bg-[#0b0e14] hover:text-[#00f0ff]"
+                  className="min-h-11 w-full rounded px-2 py-1.5 text-left font-mono text-xs text-[#9fd8e6] hover:bg-[#0b0e14] active:bg-[#12303a] hover:text-[#00f0ff] focus-visible:outline-2 focus-visible:outline-[#00f0ff]"
                 >
                   Sector {sectorLabel(plot)} — {plot.tenant?.companyName ?? 'Anonymous'}
                 </button>

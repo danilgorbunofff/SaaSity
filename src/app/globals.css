@@ -2,6 +2,7 @@
 
 /* SaaSity brand palette — deep-black base, neon cyan/magenta accents. */
 :root {
+  color-scheme: dark;
   --background: #050508;
   --foreground: #e8f6ff;
   --surface: #0b0e14;
@@ -32,4 +33,29 @@ body {
   50% {
     opacity: 0.25;
   }
+}
+
+/* Part 6 `a11y-structure`: visible skip link + guaranteed focus ring. */
+.skip-link {
+  position: absolute;
+  left: 0.75rem;
+  top: -4rem;
+  z-index: 60;
+  border-radius: 0.5rem;
+  border: 1px solid var(--neon-cyan);
+  background: #050508;
+  padding: 0.6rem 1rem;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.75rem;
+  color: var(--neon-cyan);
+  transition: top 0.15s ease;
+}
+
+.skip-link:focus-visible {
+  top: 0.75rem;
+}
+
+:focus-visible {
+  outline: 2px solid var(--neon-cyan);
+  outline-offset: 2px;
 }

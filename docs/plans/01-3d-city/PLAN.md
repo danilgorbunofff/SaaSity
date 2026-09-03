@@ -1,7 +1,7 @@
 # Milestone 1 — 3D City
 
 **Prev:** [00 · Scaffold & Data Layer](../00-scaffold-and-data-layer/PLAN.md) · **Next:** [02 · Reservations & Realtime](../02-reservations-and-realtime/PLAN.md)
-**Status:** ✅ Complete (M1 phases 1.1–1.5 shipped; M2 reservations & realtime pending)
+**Status:** 🟡 In progress (M1 phases 1.1–1.5 shipped + Parts 5–6 remediation hardening applied; preview/real-device proof pending per Part 7)
 
 ## Objective
 

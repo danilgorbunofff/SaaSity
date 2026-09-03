@@ -21,10 +21,12 @@ test('clean snapshot matching the seed reports zero divergence', () => {
 test('a seed plot missing from the snapshot is reported as missing', () => {
   const seed = generateInitialGrid();
   const dtos = new Map(
-    seed.slice(1).map((p) => [
-      p.id,
-      { originX: p.originX, originY: p.originY, spanX: p.spanX, spanY: p.spanY },
-    ]),
+    seed
+      .slice(1)
+      .map((p) => [
+        p.id,
+        { originX: p.originX, originY: p.originY, spanX: p.spanX, spanY: p.spanY },
+      ]),
   );
   const out = findSeedDtoDivergence(seed, dtos);
   assert.equal(out.length, 1);

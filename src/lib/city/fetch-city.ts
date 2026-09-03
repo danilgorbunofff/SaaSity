@@ -40,18 +40,28 @@ export async function fetchCitySnapshot(): Promise<CitySnapshot> {
   const positions = Array.isArray(me.positions) ? me.positions : [];
   // Back-compat: derive ids from the projection when the server sent it
   // (identical filter), otherwise fall back to the legacy id list.
-  const myPreBidIds = positions.length > 0 ? positions.map((p) => p.preBidId) : (me.preBidIds ?? []);
-  return { plots: data.plots, myPreBidIds, myPositions: positions, mockResolveEnabled: data.mockResolveEnabled === true };
+  const myPreBidIds =
+    positions.length > 0 ? positions.map((p) => p.preBidId) : (me.preBidIds ?? []);
+  return {
+    plots: data.plots,
+    myPreBidIds,
+    myPositions: positions,
+    mockResolveEnabled: data.mockResolveEnabled === true,
+  };
 }
 
 /** Owner projection only — the lightweight refresh after claim/bid/resolution. */
-export async function fetchMyPositions(): Promise<{ preBidIds: string[]; positions: OwnerPosition[] }> {
+export async function fetchMyPositions(): Promise<{
+  preBidIds: string[];
+  positions: OwnerPosition[];
+}> {
   try {
     const res = await fetch('/api/me/bids', { cache: 'no-store' });
     if (!res.ok) return { preBidIds: [], positions: [] };
     const me = (await res.json()) as MeBidsResponse;
     const positions = Array.isArray(me.positions) ? me.positions : [];
-    const preBidIds = positions.length > 0 ? positions.map((p) => p.preBidId) : (me.preBidIds ?? []);
+    const preBidIds =
+      positions.length > 0 ? positions.map((p) => p.preBidId) : (me.preBidIds ?? []);
     return { preBidIds, positions };
   } catch {
     return { preBidIds: [], positions: [] };

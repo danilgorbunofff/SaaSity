@@ -84,6 +84,13 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
+      # Part 7 `test-coverage-gap`: formatting is a CI gate, not a convention.
+      # `npm run format` fixes, this step only checks — the tree must be
+      # prettier-clean on every push, so formatting drift like the backlog
+      # Part 7 cleaned up can never silently reaccumulate.
+      - name: Format check
+        run: npm run format:check
+
       # package.json's lint script already carries --max-warnings=0, so this
       # fails on any warning locally and in CI alike (Additional cleanup #2).
       - name: Lint

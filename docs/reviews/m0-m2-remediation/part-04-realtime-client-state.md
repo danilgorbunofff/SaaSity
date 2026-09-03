@@ -157,6 +157,13 @@ build with `MOCK_PAYMENTS=1`.
       shared-table contract level (two independently-pooled Prisma clients:
       write on one, ordered read on the other) plus a live bid→SSE→outbox
       walk; true multi-instance soak is a preview-env exercise.
+      Rate limiting stays a per-process abuse guard (`src/server/rate-limit.ts`
+      header: "Single-node dev guard", Redis swap is the documented evolution
+      path) — i.e. N instances grant N× the per-instance budget, fail-open on
+      abuse, never fail-closed on legitimate traffic. The plots-route sweep is
+      likewise per-process but deliberately redundant: it only invokes the
+      idempotent worker claim path, so concurrent sweeps are harmless
+      duplicate work, not double settlement.
 - [x] `sse-snapshot-race` — subscribe-first + race-window buffer + replay in
       arrival order; outbox high-watermark read BEFORE the plot query with
       cursor advance; snapshot∩buffer overlap converges via idempotent
@@ -211,4 +218,65 @@ build with `MOCK_PAYMENTS=1`.
   execution each — if the platform caps concurrent executions, clients
   degrade to reconnect + focus refetch, and a managed broker replaces the
   outbox poll (documented evolution path, not needed at this scale).
+
+## Reverification (2026-09-03, strict pass)
+
+Ran, not re-read: `npm test` → **138/138 pass** (the "92/92" in the
+record above was the count at build time; later parts added suites —
+history preserved, current count recorded here), `npx tsc --noEmit`
+clean, `npm run lint` clean. Live proofs (`realtime-fanout-proof`,
+`e2e-full-loop`) were NOT re-run — they need a live server +
+`MOCK_PAYMENTS=1` + Postgres; last recorded runs stand.
+
+- `serverless-local-bus` — CONFIRMED with one honesty fix: the record
+  claimed closure but never mentioned the finding's own "rate limiting
+  and sweep scheduling" sub-item. Both are still process-local; added the
+  paragraph above (fail-open abuse guard, idempotent sweep) so the doc no
+  longer over-claims. Outbox mechanics themselves verified line-exact
+  (`outbox.ts`: sink never throws, `highSeq` advances past malformed rows,
+  200-row cap, 24h prune wired fire-and-forget into the cron route;
+  `bus.ts`: sync local fan-out + sink handoff, `eventKeyOf` per-type
+  namespaces, throwing listeners/sinks isolated).
+- `sse-snapshot-race` — CONFIRMED: subscribe (L118) precedes the
+  watermark read (L134) precedes the plot query (L139); buffer replays in
+  arrival order (L163); local/outbox double delivery dedupes by key.
+  Residual window (cross-instance commit between plot query and first
+  poll) converges within one poll interval (~1s, the documented latency).
+- `sse-abort-leak` — CONFIRMED, no leak: abort listener attaches before
+  the first await (L92); `closed || aborted` checked after every await
+  (L135, L142, L178) and inside `write`/`deliver`; `write` self-cleans on
+  enqueue-throw (L101); hello/snapshot write failures `return` only after
+  cleanup has already run via the abort path or the throw path — the
+  listener from step 1 is always removed exactly once (`cleanup` is
+  idempotent, L65-88). One doc nit, no code change: "no listener … is
+  ever created after a failure" means end-state, not creation order.
+- `next-cycle-realtime-state` — CONFIRMED: `settleAndRotate` re-reads
+  plot leader + next-cycle price post-rotation (`worker.ts` L351-368);
+  `readStoredOutcome` staleness guard (`startedAt === resolvedAt`,
+  L801-805); client swaps all six fields atomically (`realtime.ts`
+  L162-210); tenant rotates to the paid winner, never evicted on empty
+  resolution (L193-202).
+- `outbid-reconstruction` — CONFIRMED: `/api/me/bids` selects only
+  id/plotId/cycleId/status (never maxima); `deriveOutbidFromPositions` +
+  `mergeOutbidPlotIds` (rotation/LOST clearing) verified; refresh paths
+  real — claim/bid success dispatches `city-refetch` → `DataBinder`
+  reloads snapshot incl. positions (`BidModal.tsx` L334,
+  `CityScene.tsx` L86-103), resolution calls lightweight
+  `refreshMyPositions` (`realtime.ts` L208), reconnect/focus covered by
+  `fullResync`/`DataBinder`.
+- `public-bidder-id` — CONFIRMED: `winner.preBidId` only in
+  `types/api.ts` + `bus.ts`; zero `bidderId`/`maxBidCents` under
+  `src/lib/city` or `src/components` (public surface); serializer tests
+  assert absence per event type.
+- Hardening — CONFIRMED: badge (`TopStrip.tsx` L89-121, `role="status"`,
+  no `stale` enum by design — visible sync age instead); 3-strikes resync
+  surfacing (`realtime.ts` L55-87); 3-strikes malformed-frame re-anchor
+  with unknown *types* ignored for forward-compat (L246-276, L315-318);
+  unknown-plot throttled re-anchor 5s (L90-101); offline→badge/online→
+  re-anchor (L344-358); `stopRealtime` removes all listeners (L374-387).
+- Recorded numbers — CONFIRMED present and matching code
+  (`OUTBOX_POLL_MS=1000`, 24h retention, 200-row cap, backoff 0.5s→30s,
+  15s heartbeat). Two drifts noted, not fixed (historical record):
+  "92/92" is now 138/138 (see above); "34 checks" vs 40 `check(` call
+  sites in the proof script (runtime count varies by path).
 

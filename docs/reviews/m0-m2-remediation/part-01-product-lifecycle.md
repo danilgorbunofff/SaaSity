@@ -235,8 +235,10 @@ a `brand` to `emitBidPlaced`.
 **Validation performed, all passing:**
 
 - `npx tsc --noEmit` — clean.
-- `npm test` — 52/52, including a full rewrite of `tests/realtime/bus.test.ts`
-  with explicit privacy assertions.
+- `npm test` — 138/138 passing at re-verification time (the doc originally
+  recorded 52/52 when Part 1 landed; later parts added suites — count
+  re-verified 2026-09-03), including the rewritten
+  `tests/realtime/bus.test.ts` with explicit privacy assertions.
 - `npm run build` — succeeds (Next.js 16.3.4, Turbopack).
 - `npm run lint` — clean.
 - Repo-wide grep for every old `leader*` brand field name and

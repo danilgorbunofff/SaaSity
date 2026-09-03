@@ -13,15 +13,18 @@ export function makeMemoryAttemptStore(): AttemptStore & { rows: SettlementAttem
   return {
     rows,
     async findCapturedByKey(idempotencyKey) {
-      return rows.find((r) => r.idempotencyKey === idempotencyKey && r.status === 'CAPTURED') ?? null;
+      return (
+        rows.find((r) => r.idempotencyKey === idempotencyKey && r.status === 'CAPTURED') ?? null
+      );
     },
     async findReleasedByKey(idempotencyKey) {
-      return rows.find((r) => r.idempotencyKey === idempotencyKey && r.status === 'RELEASED') ?? null;
+      return (
+        rows.find((r) => r.idempotencyKey === idempotencyKey && r.status === 'RELEASED') ?? null
+      );
     },
     async createPending(args) {
-      const attemptNo = rows.filter(
-        (r) => r.preBidId === args.preBidId && r.kind === args.kind,
-      ).length + 1;
+      const attemptNo =
+        rows.filter((r) => r.preBidId === args.preBidId && r.kind === args.kind).length + 1;
       const row: SettlementAttemptRecord = {
         id: `attempt-${(n += 1)}`,
         preBidId: args.preBidId,

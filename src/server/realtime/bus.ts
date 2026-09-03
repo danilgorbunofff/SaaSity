@@ -188,11 +188,7 @@ export function emitBidPlaced(input: {
 }
 
 /** Bid route only — fires when soft-close extended endAt this request. */
-export function emitCycleExtended(input: {
-  plotId: string;
-  cycleId: string;
-  endAt: string;
-}): void {
+export function emitCycleExtended(input: { plotId: string; cycleId: string; endAt: string }): void {
   emit('cycle:extended', {
     plotId: input.plotId,
     cycleId: input.cycleId,

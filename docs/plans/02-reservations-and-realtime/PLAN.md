@@ -1,7 +1,7 @@
 # Milestone 2 — Auctions & Realtime
 
 **Prev:** [01 · 3D City](../01-3d-city/PLAN.md) · **Next:** [03 · Stripe Pre-Auth & Capture](../03-stripe-payments/PLAN.md)
-**Status:** ⚪ Not started
+**Status:** 🟡 In progress — phases 2.1–2.5 implemented + locally verified (unit suite, `tsc`, `next build`, proof scripts); preview proof pending per Part 7 (`preview-proof-overclaim`)
 
 > Folder kept as `02-reservations-and-realtime` to avoid renumbering every cross-file link — read this milestone as **"Auctions & Realtime"** throughout.
 
