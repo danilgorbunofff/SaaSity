@@ -24,43 +24,16 @@ import { AdditiveBlending, type Mesh, type MeshStandardMaterial } from 'three';
 import { TIERS, formatPrice } from '@/lib/tiers';
 import { TIER_MESH } from '@/components/city/TierMeshes';
 import { NEON, PERF_MINIMAL } from '@/lib/city/config';
+import { getTick, getTickNow, subscribeTick } from '@/lib/city/shared-tick';
+import { animNow, isReducedMotion, pulsePhase, useReducedMotion } from '@/lib/city/reduced-motion';
 import { isClosingSoon } from '@/lib/city/ownership';
 import type { PlotDto } from '@/types/api';
 
-const TICK_MS = 5000;
-
 /* ------------------------------------------------------------------ */
-/* Shared low-frequency tick - one interval for the entire grid        */
+/* Shared low-frequency tick - re-exported (logic in lib/city/shared-tick) */
 /* ------------------------------------------------------------------ */
 
-let tickValue = 0;
-/** Wall-clock snapshot taken ON the interval - never Date.now() in render. */
-let nowValue = Date.now();
-const tickListeners = new Set<() => void>();
-let tickStarted = false;
-
-function startTick() {
-  if (tickStarted) return;
-  tickStarted = true;
-  setInterval(() => {
-    tickValue += 1;
-    nowValue = Date.now();
-    tickListeners.forEach((fn) => fn());
-  }, TICK_MS);
-}
-
-export function subscribeTick(fn: () => void): () => void {
-  startTick();
-  tickListeners.add(fn);
-  return () => {
-    tickListeners.delete(fn);
-  };
-}
-
-export function getTick(): number {
-  startTick();
-  return tickValue;
-}
+export { getTick, subscribeTick } from '@/lib/city/shared-tick';
 
 /** Re-renders the caller at most every 5s (grid-wide, not per-plot). */
 export function useTick(): number {
@@ -75,7 +48,7 @@ export function useTick(): number {
  */
 export function useNow(): number {
   useTick();
-  return nowValue;
+  return getTickNow();
 }
 
 /** Coarse mm:ss countdown for badges - updated on the shared tick only. */
@@ -124,18 +97,20 @@ export function SkinEdgeGlow({
   const intensity = isLive ? (closingSoon ? 1.7 : 1.0) : 0.35;
   const pulseSpeed = isLive ? 2.4 : 1.0;
 
-  useFrame(({ clock }) => {
+  useFrame(() => {
     if (matRef.current) {
-      const phase = 0.5 + 0.5 * Math.sin(clock.elapsedTime * pulseSpeed);
+      const phase = pulsePhase(animNow(), pulseSpeed);
       matRef.current.emissiveIntensity = intensity * (0.65 + 0.35 * phase);
     }
   });
 
   return (
     <group>
-      {/* roof-edge strip */}
-      <mesh position={[0, height - 0.02, 0]}>
-        <boxGeometry args={[size + 0.03, 0.04, size + 0.03]} />
+      {/* roof-edge strip: sits proud of the tower trim (+0.05 wider, top face
+          above the trim plane) so no two faces are coplanar (Part 5
+          selection-feedback z-fighting fix). */}
+      <mesh position={[0, height + 0.005, 0]}>
+        <boxGeometry args={[size + 0.06, 0.04, size + 0.06]} />
         <meshStandardMaterial
           ref={matRef}
           color="#0a1418"
@@ -149,7 +124,9 @@ export function SkinEdgeGlow({
           [size / 2, size / 2],
           [-size / 2, -size / 2],
         ] as const).map(([hx, hz], i) => (
-          <mesh key={i} position={[hx, height / 2, hz]}>
+          // Offset 0.025 outward so the strip faces are never coplanar with
+          // the tower sides (Part 5 z-fighting fix — same class as the roof).
+          <mesh key={i} position={[hx + Math.sign(hx) * 0.025, height / 2, hz + Math.sign(hz) * 0.025]}>
             <boxGeometry args={[0.035, height * 0.9, 0.035]} />
             <meshStandardMaterial
               color="#0a1418"
@@ -184,7 +161,7 @@ function clampRingRadius(tier: 'OUTER' | 'MID' | 'CORE', r: number, width: numbe
   return Math.min(r, max);
 }
 
-/** Flat ground ring: hover = faint white, selected = bright cyan. */
+/** Flat ground ring: hover = faint white, selected = bright cyan, wide, opaque. */
 export function SelectionRing({
   size,
   y,
@@ -197,14 +174,18 @@ export function SelectionRing({
   tier: 'OUTER' | 'MID' | 'CORE';
 }) {
   const ref = useRef<Mesh>(null);
-  const r = clampRingRadius(tier, size / 2 + 0.12, selected ? 0.09 : 0.05);
+  // Selected reads at a glance: double the hover width, full opacity, and a
+  // hot pulse band — distinct from hover (thin/faint) and ownership (beacon/
+  // aura/badge layer, never a ground ring). (Part 5 selection-feedback.)
+  const selectedWidth = 0.12;
+  const r = clampRingRadius(tier, size / 2 + 0.12, selected ? selectedWidth : 0.05);
 
-  useFrame(({ clock }) => {
+  useFrame(() => {
     if (ref.current) {
       const mat = ref.current.material as MeshStandardMaterial;
       if (selected) {
-        const phase = 0.5 + 0.5 * Math.sin(clock.elapsedTime * 2.2);
-        mat.emissiveIntensity = 1.6 + 0.9 * phase;
+        const phase = pulsePhase(animNow(), 2.2);
+        mat.emissiveIntensity = 2.0 + 1.2 * phase;
       } else {
         mat.emissiveIntensity = 0.55;
       }
@@ -213,13 +194,13 @@ export function SelectionRing({
 
   return (
     <mesh ref={ref} position={[0, y, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-      <ringGeometry args={[r, r + (selected ? 0.09 : 0.05), 48]} />
+      <ringGeometry args={[r, r + (selected ? selectedWidth : 0.05), 48]} />
       <meshStandardMaterial
         color="#04121a"
         emissive={selected ? NEON.cyan : '#ffffff'}
-        emissiveIntensity={selected ? 1.6 : 0.55}
+        emissiveIntensity={selected ? 2.0 : 0.55}
         transparent
-        opacity={selected ? 0.95 : 0.45}
+        opacity={selected ? 1 : 0.45}
         side={2}
         toneMapped={false}
       />
@@ -244,10 +225,10 @@ export function IdlePulseRing({
   const ref = useRef<Mesh>(null);
   const r = clampRingRadius(tier, size / 2 + 0.12, 0.09);
 
-  useFrame(({ clock }) => {
+  useFrame(() => {
     if (ref.current) {
       const mat = ref.current.material as MeshStandardMaterial;
-      const phase = 0.5 + 0.5 * Math.sin(clock.elapsedTime * 2.8);
+      const phase = pulsePhase(animNow(), 2.8);
       mat.emissiveIntensity = 1.2 + 1.1 * phase;
       mat.opacity = 0.5 + 0.45 * phase;
     }
@@ -275,9 +256,9 @@ function Beacon({ baseY, height, outbid }: { baseY: number; height: number; outb
   const beamH = 10;
   const speed = outbid ? 3.2 : 1.1;
 
-  useFrame(({ clock }) => {
+  useFrame(() => {
     if (matRef.current) {
-      const phase = 0.5 + 0.5 * Math.sin(clock.elapsedTime * speed);
+      const phase = pulsePhase(animNow(), speed);
       matRef.current.opacity = (outbid ? 0.28 : 0.45) * (0.55 + 0.45 * phase);
     }
   });
@@ -306,14 +287,16 @@ function AuraRing({ size, y, tier, outbid }: { size: number; y: number; tier: 'O
   const r = clampRingRadius(tier, size / 2 + 0.18, 0.1);
   const speed = outbid ? 3.0 : 1.4;
 
-  useFrame(({ clock }) => {
+  useFrame(() => {
     if (ref.current) {
-      const phase = 0.5 + 0.5 * Math.sin(clock.elapsedTime * speed);
+      const phase = pulsePhase(animNow(), speed);
       const s = 1 + 0.06 * phase;
       ref.current.scale.set(s, s, 1);
       const mat = ref.current.material as MeshStandardMaterial;
       mat.emissiveIntensity = (outbid ? 1.8 : 1.2) * (0.6 + 0.4 * phase);
-      ref.current.rotation.z += 0.004;
+      // Rotational motion is decorative-only and removed under reduced
+      // motion (pulsePhase pins the phase AND the spin stops).
+      if (!isReducedMotion()) ref.current.rotation.z += 0.004;
     }
   });
 
@@ -353,6 +336,9 @@ function RoofBadge({
   y: number;
 }) {
   const countdown = useCoarseCountdown(endAt);
+  // Flashing is motion: under reduced motion the outbid state keeps its
+  // high-contrast amber treatment statically (color carries the meaning).
+  const reduceMotion = useReducedMotion();
 
   const text = outbid
     ? `⚠️ OUTBID: +${formatPrice(tierIncrementCents(tier))} to retain`
@@ -373,7 +359,7 @@ function RoofBadge({
           color: outbid ? '#1a1000' : '#001318',
           background: outbid ? NEON.amber : NEON.cyan,
           boxShadow: `0 0 12px ${outbid ? NEON.amber : NEON.cyan}`,
-          animation: outbid ? 'city-outbid-flash 0.8s steps(2, jump-none) infinite' : undefined,
+          animation: outbid && !reduceMotion ? 'city-outbid-flash 0.8s steps(2, jump-none) infinite' : undefined,
         }}
       >
         {text}

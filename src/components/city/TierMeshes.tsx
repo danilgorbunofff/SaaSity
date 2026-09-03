@@ -13,16 +13,16 @@ import type { InstancedMesh, Mesh } from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
 import { plinthY } from '@/lib/city/grid-to-world';
 import { seededRange } from '@/lib/city/seeded';
+import { TIER_MESH, plotHeight } from '@/lib/city/tier-geometry';
 import { NEON } from '@/lib/city/config';
+import { animNow, pulsePhase } from '@/lib/city/reduced-motion';
 import { useCityStore } from '@/lib/city/store';
 
-/** Footprints and height ranges per tier (phase-02 spec). */
-export const TIER_MESH = {
-  OUTER: { size: 0.9, minH: 1.5, maxH: 2.5 },
-  MID: { size: 1.85, minH: 4.0, maxH: 6.0 },
-  CORE: { size: 3.8, minH: 10.0, maxH: 14.0 },
-} as const;
+/** Re-exported from the node-safe tier-geometry module (Part 5). */
+export { TIER_MESH, plotHeight };
 
+/** Footprints and height ranges per tier — see lib/city/tier-geometry. */
+const OUTER_SIZE = TIER_MESH.OUTER.size;
 /** Releasing a stuck pointer cursor if the canvas unmounts mid-hover. */
 function useCursorCleanup() {
   useEffect(
@@ -42,12 +42,6 @@ export interface PlotMeshData {
   spanY: number;
 }
 
-export function plotHeight(id: string, tier: PlotMeshData['tier']): number {
-  const r = TIER_MESH[tier];
-  return seededRange(id, 'height', r.minH, r.maxH);
-}
-
-const OUTER_SIZE = TIER_MESH.OUTER.size;
 const OUTER_STRIP_OFFSET = OUTER_SIZE / 2;
 /** Scratch matrix reused across instance writes (module-level: never per-frame). */
 const tmpMatrix = new Matrix4();
@@ -230,13 +224,13 @@ function CoreSpire({ height }: { height: number }) {
   );
 }
 
-/** Blinking tip driven by a shared clock so all tips stay in sync. */
+/** Blinking tip driven by the app animation clock (static under reduced motion). */
 function AntennaTip({ y }: { y: number }) {
   const ref = useRef<Mesh>(null);
-  useFrame(({ clock }) => {
+  useFrame(() => {
     if (ref.current) {
       const mat = ref.current.material as { opacity?: number };
-      if (mat) mat.opacity = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(clock.elapsedTime * 4));
+      if (mat) mat.opacity = 0.35 + 0.65 * pulsePhase(animNow(), 4);
     }
   });
   return (

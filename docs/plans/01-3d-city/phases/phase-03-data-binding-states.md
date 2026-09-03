@@ -47,7 +47,7 @@ The real 49-plot grid from `/api/plots` replaces mock data; each plot renders wi
 
 ## Exit criteria
 
-- [x] City is 100% data-driven from the deployed API, with tier-correct plinth Y
+- [x] Plot STATE is 100% data-driven from the deployed API, with tier-correct plinth Y. Geometry (grid positions/spans) is intentionally FIXED from the static `generateInitialGrid` seed — the 10x10 product grid does not change shape; the seed/DTO agreement is enforced by the unit-tested `findSeedDtoDivergence` invariant (Part 5), not by fetching geometry.
 - [x] Both status skins (`IDLE`/`LIVE`) readable at default zoom, plus the shared-tick "closing soon" escalation visible near `endAt`
 - [x] Personal identity (beacon + aura + badge) visible only on owned-leading plots and correct through an outbid flip
 - [x] Outbid badge shows correct tier increment (+$0.50 / +$1.00 / +$5.00) per plot tier

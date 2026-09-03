@@ -111,3 +111,42 @@ exceeds ~205 KB.
 **Gates:** per-frame draw calls/tris now fit a mid-range phone comfortably; absolute FPS
 untested on real hardware here (headless desktop only) — noted for first real-device run.
 Heap gate passed (+2.0 MB / 2 min, limit 50 MB).
+
+## Part 5 addendum — real-device procedure + skin/instancing tradeoff
+
+**Reference device (selected, pending measurement): Pixel 7a-class**
+(a 2023 mid-range Tensor G2 / 8 GB phone — representative of the "mid mobile"
+cohort; a Galaxy A54-class Exynos device is an acceptable substitute — record
+whichever was used). No absolute-FPS claim ships until this run lands; the M1
+PLAN.md definition-of-done box stays explicitly open.
+
+**Reproducible procedure (no prose-only results):**
+
+1. Deploy the preview build, open `/?perf=stats` on the reference phone.
+2. Full scene: record the `?perf=stats` readout (calls/tris/geo/tex/prog) at
+   default zoom after first paint settles (~10 s).
+3. Busy-launch fixture: 3 owned plots + 10+ LIVE plots, force one outbid flip;
+   record the readout again plus interaction latency (tap plot → DetailCard).
+4. Frame rate: overlay the OS GPU/frame-time tool (Android GPU Inspector /
+   Xcode Instruments) — record FPS distribution (p50/p95), frame time,
+   thermal state, and memory over a 60 s orbit session.
+5. Orientation: rotate portrait ↔ landscape twice — the city must not unmount
+   (Canvas resize only) and selection must survive.
+6. Paste the numbers into this section with device model, OS, browser, date,
+   and commit hash. If p50 < 30 FPS, pull a lever (beacon height cut, Html
+   distance cull, `?perf=minimal` comparison) and record the tradeoff.
+
+**`?perf=stats` instrument:** `PerfStatsChip` (CityScene) prints
+`gl.info.render` calls/triangles plus memory geometries/textures/programs,
+refreshed on the shared 5 s tick; zero production cost (never mounts without
+the flag). Companion flags: `?perf=minimal` (hill + beacons off, A/B lever),
+`?debug=1` (plot-id labels + force-ownedLeading skin QA).
+
+**Part 5 draw-call tradeoff (recorded, deliberate):** fixing
+`outer-skins-regression` adds one status skin group per OUTER plot (36 roof
+strips + conditional rings/beacons). OUTER tower BODIES stay instanced (3 draw
+calls); the +36 worst-case skin calls are one small box each — still an order
+of magnitude under the pre-instancing baseline. Headless re-profile was NOT possible
+in this environment (no GL-capable runner) — the gate evidence here is
+`tsc` + `eslint` + 116/116 unit tests + production build; draw-call numbers
+refresh on the real-device run via `?perf=stats`.

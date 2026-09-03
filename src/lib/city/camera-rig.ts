@@ -1,9 +1,10 @@
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import * as THREE from 'three';
 import { gridToWorld, plinthY } from './grid-to-world';
-import { plotHeight } from '@/components/city/TierMeshes';
+import { plotHeight } from '@/lib/city/tier-geometry';
 import { generateInitialGrid } from '@/lib/grid';
 import { useCityStore } from './store';
+import { cameraTweenMs, isReducedMotion } from './reduced-motion';
 import { CAMERA } from './config';
 
 /**
@@ -63,8 +64,35 @@ const FLY_ZOOM = 72;
 
 let activeRaf: number | null = null;
 
+/** Interrupts an in-flight fly-to (user orbit/pan takes over immediately). */
+export function cancelFlyTo(): void {
+  if (activeRaf !== null) {
+    cancelAnimationFrame(activeRaf);
+    activeRaf = null;
+  }
+}
+
 function easeInOutCubic(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+/** Applies one tween frame (shared by the animated path and the instant jump). */
+function applyView(
+  c: OrbitControlsImpl,
+  cam: THREE.OrthographicCamera,
+  startTarget: THREE.Vector3,
+  endTarget: THREE.Vector3,
+  startPos: THREE.Vector3,
+  endPos: THREE.Vector3,
+  startZoom: number,
+  endZoom: number,
+  k: number,
+): void {
+  c.target.lerpVectors(startTarget, endTarget, k);
+  cam.position.lerpVectors(startPos, endPos, k);
+  cam.zoom = startZoom + (endZoom - startZoom) * k;
+  cam.updateProjectionMatrix();
+  c.update();
 }
 
 /**
@@ -90,18 +118,55 @@ export function flyToPlot(plotId: string): void {
   const startZoom = cam.zoom;
   const endZoom = Math.min(FLY_ZOOM, CAMERA.maxZoom);
 
-  if (activeRaf !== null) cancelAnimationFrame(activeRaf);
+  cancelFlyTo();
+  // Reduced motion: jump straight to the same end state (no tween), so the
+  // destination is identical and no information is lost.
+  if (isReducedMotion()) {
+    applyView(c, cam, startTarget, endTarget, startPos, endPos, startZoom, endZoom, 1);
+    return;
+  }
   let start = -1;
 
   const step = (ts: number) => {
     if (start < 0) start = ts;
     const t = Math.min(1, (ts - start) / FLY_MS);
     const k = easeInOutCubic(t);
-    c.target.lerpVectors(startTarget, endTarget, k);
-    cam.position.lerpVectors(startPos, endPos, k);
-    cam.zoom = startZoom + (endZoom - startZoom) * k;
-    cam.updateProjectionMatrix();
-    c.update();
+    applyView(c, cam, startTarget, endTarget, startPos, endPos, startZoom, endZoom, k);
+    if (t < 1) {
+      activeRaf = requestAnimationFrame(step);
+    } else {
+      activeRaf = null;
+    }
+  };
+  activeRaf = requestAnimationFrame(step);
+}
+
+/**
+ * Reset-view control target (Part 5 selection-feedback): restores the
+ * canonical isometric framing after orbit/fly-to. Animated unless reduced
+ * motion is requested (then instant). No-op before the scene mounts.
+ */
+export function resetView(): void {
+  const c = controls;
+  if (!c) return;
+  const cam = c.object as THREE.OrthographicCamera;
+  const startTarget = c.target.clone();
+  const endTarget = new THREE.Vector3(...CAMERA.target);
+  const startPos = cam.position.clone();
+  const endPos = new THREE.Vector3(...CAMERA.position);
+  const startZoom = cam.zoom;
+
+  cancelFlyTo();
+  if (isReducedMotion()) {
+    applyView(c, cam, startTarget, endTarget, startPos, endPos, startZoom, CAMERA.zoom, 1);
+    return;
+  }
+  let start = -1;
+  const step = (ts: number) => {
+    if (start < 0) start = ts;
+    const t = Math.min(1, (ts - start) / FLY_MS);
+    const k = easeInOutCubic(t);
+    applyView(c, cam, startTarget, endTarget, startPos, endPos, startZoom, CAMERA.zoom, k);
     if (t < 1) {
       activeRaf = requestAnimationFrame(step);
     } else {

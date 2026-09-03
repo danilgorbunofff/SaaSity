@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import { Environment, Html, Lightformer, OrbitControls } from '@react-three/drei';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import {
@@ -12,17 +12,20 @@ import {
   LIGHTS,
   NEON,
   PERF_MINIMAL,
+  PERF_STATS,
   SCENE,
 } from '@/lib/city/config';
-import { registerCameraControls } from '@/lib/city/camera-rig';
+import { registerCameraControls, cancelFlyTo } from '@/lib/city/camera-rig';
 import { generateInitialGrid } from '@/lib/grid';
+import { buildSkinOverlays } from '@/lib/city/skin-overlays';
+import { findSeedDtoDivergence } from '@/lib/city/seed-check';
 import { fetchCitySnapshot } from '@/lib/city/fetch-city';
 import { startRealtime, stopRealtime } from '@/lib/city/realtime';
 import { useCityStore, isOwnedLeading } from '@/lib/city/store';
 import { TerracedHill } from './TerracedHill';
 import { Plot, OuterTowerField, plotHeight, type PlotMeshData } from './TierMeshes';
 import { plinthY } from '@/lib/city/grid-to-world';
-import { PlotSkins } from './PlotSkins';
+import { PlotSkins, useTick } from './PlotSkins';
 import { TopStrip } from './hud/TopStrip';
 import { DetailCard } from './hud/DetailCard';
 import { BidModal } from './hud/BidModal';
@@ -30,7 +33,6 @@ import { MyLeasesPill } from './hud/MyLeasesPill';
 import { Minimap } from './hud/Minimap';
 import { OutbidToast } from './hud/OutbidToast';
 import { PlotA11yList } from './hud/PlotA11yList';
-import type { PlotDto } from '@/types/api';
 
 function ControlsRig() {
   // controlsRef is registered via camera-rig; fly-to arrives in phase 1.4.
@@ -51,6 +53,9 @@ function ControlsRig() {
       minPolarAngle={CAMERA.minPolarAngle}
       maxPolarAngle={CAMERA.maxPolarAngle}
       enablePan={false}
+      // User grab interrupts any in-flight fly-to/reset tween (Part 5:
+      // fly-to is interruptible; the camera never fights the pointer).
+      onStart={() => cancelFlyTo()}
     />
   );
 }
@@ -173,7 +178,8 @@ function DebugOverlay({ seed }: { seed: PlotMeshData[] }) {
   );
 }
 
-function ErrorChip() {  const error = useCityStore((s) => s.error);
+function ErrorChip() {
+  const error = useCityStore((s) => s.error);
   const hasData = useCityStore((s) => s.plots.size > 0);
   if (!error) return null;
   return (
@@ -211,68 +217,90 @@ function CityPlots() {
   // Dev-time invariant: the 3D layout is built from the static seed, so the
   // snapshot DTOs must agree on every plot's grid origin/span. A mismatch
   // means the seed and API have diverged — 3D positions would silently lie.
+  // The comparison is the unit-tested findSeedDtoDivergence (Part 5); the
+  // component only reports violations.
   useEffect(() => {
     if (!hasData) return;
-    for (const p of seed) {
-      const dto = plotsMap.get(p.id);
-      if (!dto) {
-        console.error(`[city] seed plot ${p.id} missing from snapshot DTOs`);
-        continue;
-      }
-      if (
-        dto.originX !== p.originX ||
-        dto.originY !== p.originY ||
-        dto.spanX !== p.spanX ||
-        dto.spanY !== p.spanY
-      ) {
+    for (const d of findSeedDtoDivergence(seed, plotsMap)) {
+      if (d.kind === 'missing') {
+        console.error(`[city] seed plot ${d.id} missing from snapshot DTOs`);
+      } else {
+        const s = d.seed;
+        const dto = d.dto!;
         console.error(
-          `[city] seed/DTO divergence for ${p.id}: seed=(${p.originX},${p.originY} ${p.spanX}x${p.spanY}) dto=(${dto.originX},${dto.originY} ${dto.spanX}x${dto.spanY})`,
+          `[city] seed/DTO divergence for ${d.id}: seed=(${s.originX},${s.originY} ${s.spanX}x${s.spanY}) dto=(${dto.originX},${dto.originY} ${dto.spanX}x${dto.spanY})`,
         );
       }
     }
   }, [hasData, seed, plotsMap]);
 
-  // One InstancedMesh per OUTER part replaces 36 towers x 3 meshes. Skins and
-  // hover/selection still work per plot; the tier split only moves the tower.
+  // One InstancedMesh per OUTER part replaces 36 towers x 3 meshes. Skins are
+  // NOT instanced: every seed plot (OUTER included) gets its own overlay
+  // datum below, so status/hover/selection/ownership/outbid/closing-soon
+  // semantics are identical across tiers (Part 5 outer-skins-regression fix).
+  // The tier split only moves the tower BODY.
   const outerPlots = useMemo(() => seed.filter((p) => p.tier === 'OUTER'), [seed]);
   const tallPlots = useMemo(() => seed.filter((p) => p.tier !== 'OUTER'), [seed]);
+  const overlays = useMemo(() => buildSkinOverlays(seed), [seed]);
 
   return (
     <group>
       <OuterTowerField plots={outerPlots} />
-      {tallPlots.map((p) => {
-        const dto: PlotDto | undefined = hasData ? plotsMap.get(p.id) : undefined;
-        const px = p.originX + p.spanX / 2 - 5;
-        const pz = p.originY + p.spanY / 2 - 5;
-        const baseY = plinthY(p.tier);
-        const height = plotHeight(p.id, p.tier);
-        const owned = !!dto && isOwnedLeading(dto, myPreBidIds, dto.currentLeaderPreBidId);
-        const outbid = outbidPlotIds.has(p.id) && !owned;
-        const forceOwned = DEBUG_OVERLAY && debugForceOwned;
-        return (
-          <group key={p.id}>
-            <Plot plot={p} />
-            {dto && (
-              <group position={[px, baseY, pz]}>
-                <PlotSkins
-                  plot={dto}
-                  height={height}
-                  baseY={0}
-                  ownedLeading={owned || forceOwned}
-                  outbid={outbid && !forceOwned}
-                  hovered={hoveredPlotId === p.id}
-                  selected={selectedPlotId === p.id}
-                  idlePulse={highlightIdle}
-                />
-              </group>
-            )}
-          </group>
-        );
-      })}
+      {tallPlots.map((p) => (
+        <Plot key={p.id} plot={p} />
+      ))}
+      {hasData &&
+        overlays.map((o) => {
+          const dto = plotsMap.get(o.id);
+          if (!dto) return null;
+          const owned = isOwnedLeading(dto, myPreBidIds, dto.currentLeaderPreBidId);
+          const outbid = outbidPlotIds.has(o.id) && !owned;
+          const forceOwned = DEBUG_OVERLAY && debugForceOwned;
+          return (
+            <group key={`skin-${o.id}`} position={[o.x, o.baseY, o.z]}>
+              <PlotSkins
+                plot={dto}
+                height={o.height}
+                baseY={0}
+                ownedLeading={owned || forceOwned}
+                outbid={outbid && !forceOwned}
+                hovered={hoveredPlotId === o.id}
+                selected={selectedPlotId === o.id}
+                idlePulse={highlightIdle}
+              />
+            </group>
+          );
+        })}
       {DEBUG_OVERLAY && (
         <DebugOverlay seed={seed} />
       )}
     </group>
+  );
+}
+
+/**
+ * ?perf=stats readout (Part 5 mobile-perf tooling): renderer draw calls,
+ * triangles, geometries, textures, and programs, refreshed on the shared 5s
+ * tick. Zero production cost (never mounts without the flag). This is the
+ * instrument for the documented real-device procedure — screenshot it next
+ * to the OS frame-time overlay.
+ */
+function PerfStatsChip() {
+  const gl = useThree((s) => s.gl);
+  useTick();
+  if (!PERF_STATS) return null;
+  const info = gl.info.render;
+  const mem = gl.info.memory;
+  return (
+    <Html center position={[0, 14, 0]} zIndexRange={[6, 0]}>
+      <div
+        data-testid="perf-stats"
+        className="rounded border border-[#12303a] bg-[#050508]/90 px-2 py-1 font-mono text-[10px] leading-tight text-[#9fd8e6]"
+      >
+        calls {info.calls} · tris {info.triangles} · geo {mem.geometries} · tex{' '}
+        {mem.textures} · prog {gl.info.programs ? gl.info.programs.length : 0}
+      </div>
+    </Html>
   );
 }
 
@@ -333,6 +361,7 @@ export function CityScene() {
       <RealtimeBinder />
       <LoadingChip />
       <ErrorChip />
+      <PerfStatsChip />
       <ControlsRig />
       </Canvas>
 

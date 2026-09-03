@@ -47,7 +47,8 @@ Render the full 10x10 isometric **terraced-hill** cyberpunk city from live plot 
 - [x] Camera cannot flip under the grid or zoom out of framing; pitch stays in 45°–50°, orbit pivots around hill center `(0, 2.5, 0)`
 - [x] Your `LIVE` plots identifiable without orbit-hunting: beacon visible at any angle/zoom, minimap + My Leases switcher both fly to the building
 - [x] Outbid transition unmistakable within one glance (badge flip, amber pulse, contested toast)
-- [x] ~60 FPS on desktop, acceptable (~30) on mid mobile; memory stable during long orbit sessions; Html-overlay count stays bounded
+- [x] ~60 FPS on desktop (devtools-sampled); memory stable during long orbit sessions; Html-overlay count stays bounded
+- [ ] ~30 FPS stable on a real mid-range phone — UNVERIFIED (headless-desktop sampling only; absolute FPS never measured on hardware). Reference device selected (Pixel 7a-class) and the `?perf=stats` + frame-time procedure is documented in phase-05; this box stays open until that run lands.
 
 ## Dependencies
 

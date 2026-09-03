@@ -77,14 +77,15 @@ export const LIGHTS = {
 } as const;
 
 /**
- * Low-power device heuristic (tuned in phase 1.5): fewer cores or low device
- * memory -> skip MSAA and cap dpr at 1.5.
+ * Low-power device heuristic (tuned in phase 1.5, corrected in Part 5):
+ * fewer cores or low device memory -> skip MSAA and cap dpr at 1.5.
+ * Touch capability is deliberately NOT a signal — every modern laptop and
+ * flagship phone has a touchscreen, so it misclassified fast devices.
  */
 export const IS_LOW_POWER =
   typeof navigator !== 'undefined' &&
   ((navigator.hardwareConcurrency ?? 8) <= 4 ||
-    ((navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8) <= 4 ||
-    navigator.maxTouchPoints > 1);
+    ((navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8) <= 4);
 
 /** Debug/perf-comparison flag (?perf=minimal): renders hill + beacons off. */
 export const PERF_MINIMAL =
@@ -95,3 +96,11 @@ export const PERF_MINIMAL =
 export const DEBUG_OVERLAY =
   typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).get('debug') === '1';
+
+/**
+ * Perf overlay flag (?perf=stats): renderer draw-call/triangle readout for
+ * reproducible real-device measurement (Part 5 mobile-perf procedure).
+ */
+export const PERF_STATS =
+  typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).get('perf') === 'stats';

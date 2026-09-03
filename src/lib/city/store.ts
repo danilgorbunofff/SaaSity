@@ -19,6 +19,20 @@ import type { PlotDto } from '@/types/api';
 
 export type ConnectionState = 'connecting' | 'live' | 'reconnecting' | 'offline';
 
+/** Amber IDLE-pulse CTA window (My Leases empty state). */
+export const IDLE_PULSE_MS = 8000;
+
+/** Module-level so overlapping pulses restart (never stack) the window. */
+let idlePulseTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Test-only: drop a pending pulse timer without touching store state. */
+export function clearIdlePulseTimerForTests(): void {
+  if (idlePulseTimer !== null) {
+    clearTimeout(idlePulseTimer);
+    idlePulseTimer = null;
+  }
+}
+
 export interface CityState {
   plots: Map<string, PlotDto>;
   myPreBidIds: Set<string>;
@@ -159,8 +173,14 @@ export const useCityStore = create<CityState>()((set) => ({
   setSelectedPlotId: (plotId) => set({ selectedPlotId: plotId }),
   setHoveredPlotId: (plotId) => set({ hoveredPlotId: plotId }),
   pulseIdlePlots: () => {
+    // A second pulse restarts the window: without clearing, the first
+    // timer would clear the NEWER pulse early (Part 5 maintainability fix).
+    if (idlePulseTimer !== null) clearTimeout(idlePulseTimer);
     set({ highlightIdle: true });
-    setTimeout(() => set({ highlightIdle: false }), 8000);
+    idlePulseTimer = setTimeout(() => {
+      idlePulseTimer = null;
+      set({ highlightIdle: false });
+    }, IDLE_PULSE_MS);
   },
   setDebugForceOwned: (v) => set({ debugForceOwned: v }),
   setMockResolveEnabled: (v) => set({ mockResolveEnabled: v }),
