@@ -2,6 +2,14 @@
   "name": "saasity",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.9.0",
+    "npm": ">=10"
+  },
+  "overrides": {
+    "deepmerge-ts": "^8.0.2",
+    "mysql2": "^3.24.3"
+  },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
@@ -37,7 +45,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint --cache",
+    "lint": "eslint --cache --max-warnings=0",
     "format": "prettier --write .",
     "db:seed": "prisma db seed",
     "test": "tsx --test tests/**/*.test.ts"

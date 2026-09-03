@@ -332,6 +332,11 @@ export function BidModal() {
               >
                 {status === 'submitting' ? 'Submitting…' : copy.cta}
               </button>
+              <p className="text-center text-[11px] leading-snug text-[#6b7a8c]">
+                No account — you&apos;re identified by a browser cookie. Clearing
+                cookies or switching devices means you can&apos;t manage this bid
+                later, but it never affects the auction itself.
+              </p>
               {confirmDiscard ? (
                 <div className="flex items-center justify-between gap-2 rounded border border-[#ffb400]/40 bg-[#ffb400]/10 px-3 py-2 text-[12px] text-[#ffb400]">
                   <span>Discard unsaved changes?</span>

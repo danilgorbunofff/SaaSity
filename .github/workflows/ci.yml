@@ -1,0 +1,96 @@
+name: CI
+
+# Required-checks pipeline for main and every pull request targeting it
+# (Part 2 remediation: missing-prisma-generate #5, untracked-migrations #6,
+# delivery-pipeline-unproven #1/#5). This is the "intended CI system" — branch
+# protection on `main` still needs to be turned on in the repo settings (not
+# achievable from a workflow file alone) to actually require it before merge.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Install, migrate, verify, build
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: saasity
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/saasity
+      # Only used by the drift-check step below; Prisma needs a scratch DB to
+      # replay the migration history into before diffing it against schema.prisma.
+      SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/saasity_shadow
+      # Placeholder secrets — this job never talks to anything but the
+      # ephemeral service container above. Never reuse these values anywhere real.
+      BIDDER_COOKIE_SECRET: ci-placeholder-not-a-real-secret
+      WORKER_SECRET: ci-placeholder-not-a-real-secret
+      MOCK_PAYMENTS: '1'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      # Exercises package.json's "postinstall": "prisma generate" exactly the
+      # way a real clean checkout does — no generated client is committed.
+      - name: Install dependencies (npm ci; runs prisma generate via postinstall)
+        run: npm ci
+
+      - name: Create shadow database for the drift check
+        run: PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE saasity_shadow;"
+
+      # untracked-migrations #6: fails the build if the committed migration
+      # history, replayed from scratch, would produce a schema different from
+      # prisma/schema.prisma (i.e. someone edited the schema without a migration,
+      # or a migration doesn't match what schema.prisma now claims).
+      - name: Schema-drift check (migration history vs. schema.prisma)
+        run: npx prisma migrate diff --from-migrations ./prisma/migrations --to-schema prisma/schema.prisma --exit-code
+
+      # Applies the full migration history to a fresh/empty database — the
+      # service container is recreated every run, so this is a continuous,
+      # real proof of the "fresh install" path, not just a one-time check.
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+
+      - name: Seed
+        run: npm run db:seed
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      # package.json's lint script already carries --max-warnings=0, so this
+      # fails on any warning locally and in CI alike (Additional cleanup #2).
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build

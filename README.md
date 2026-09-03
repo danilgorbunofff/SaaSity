@@ -25,6 +25,10 @@ A 10×10 isometric cyberpunk city where SaaS founders bid in recurring timed auc
 
 ## Getting started
 
+**Requires Node.js ≥20.9 and npm ≥10** (matches Next.js 16's own `engines`
+requirement; also declared in `package.json#engines`, which npm enforces
+during `npm install`).
+
 ```bash
 # 1. Install
 npm install
@@ -56,6 +60,34 @@ See [`.env.example`](.env.example) for the full, commented list. Summary:
 | `MOCK_PAYMENTS`                                                 | yes, pre-M3       | Set to `1` to run the mock capture/cancel/authorize loop; unset means every capture fails closed (no unpaid winners) |
 | Stripe keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, ...) | milestone M3      | Real payments (not yet wired)                     |
 
+## Deployment
+
+No account is connected yet, but the repo is prepped for Vercel: a
+Hobby-plan-safe `vercel.json` cron entry, a Vercel-plan-independent GitHub
+Actions alternative for resolving ended auction cycles, required env vars
+per environment, and a go-live checklist. See
+[`docs/deployment.md`](docs/deployment.md).
+
+## Dependency policy
+
+`package.json` uses caret (`^`) ranges, not exact versions — reproducibility
+comes from the **committed `package-lock.json`**, not from the manifest.
+`npm ci` (what a clean checkout, `postinstall`, and CI all use) always
+installs the exact resolved graph in the lockfile, ignoring what a bare
+`npm install` might otherwise pick up. In practice:
+
+- Bumping a dependency is a deliberate act — `npm install <pkg>@<range>`
+  (or `npm update`) followed by committing the regenerated lockfile — never
+  an incidental side effect of someone else's `npm install`.
+- `overrides` in `package.json` forces specific transitive dependency
+  versions when a security advisory affects a sub-dependency of a package
+  we don't want to downgrade (currently: `deepmerge-ts` and `mysql2`, both
+  transitive through `prisma`'s own CLI tooling — see
+  [`docs/reviews/m0-m2-remediation/part-02-foundation-delivery-data.md`](docs/reviews/m0-m2-remediation/part-02-foundation-delivery-data.md)
+  for the advisory details).
+- No automated update bot (Renovate/Dependabot) is configured yet; updates
+  are manual for now.
+
 ## Project layout
 
 ```
@@ -69,3 +101,4 @@ docs/plans/        Milestone plans (M0..M5)
 ## Docs
 
 Milestone roadmap and detailed phase plans live in [`docs/plans/`](docs/plans/).
+Deployment prep lives in [`docs/deployment.md`](docs/deployment.md).

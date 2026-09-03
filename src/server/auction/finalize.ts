@@ -77,6 +77,12 @@ export function clearAttachAuthFailures(): void {
  * the pre-bid's maxBidCents at next-cycle attach time (the 7-day hold
  * window starts here, per the deferred-timing rule). Throws on failure;
  * the worker excludes that pre-bid from the cycle (EXPIRED / 'expired').
+ *
+ * M3 REQUIREMENT: once this stub creates a real Stripe PaymentIntent, it
+ * MUST persist the id via `attachStripePaymentIntentId`
+ * (src/server/auction/payment-intent.ts) — never a bare
+ * `prisma.preBid.update` — so a retried attach is idempotent instead of a
+ * generic failure. See that module's doc comment for the full contract.
  */
 export async function authorizePreBidAtAttach(
   preBid: Pick<PreBid, 'id' | 'stripePaymentIntentId'>,

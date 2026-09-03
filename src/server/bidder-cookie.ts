@@ -3,12 +3,19 @@ import { cookies } from 'next/headers';
 
 /**
  * Anonymous bidder identity — HMAC-signed httpOnly cookie, NO Bidder table.
- * Payload: { bidderId, stripeCustomerId?, issuedAt }, ~1 year TTL.
- * Reused by every later milestone (M2 claim/bid/prebid, M3 Stripe pre-auth).
+ * Payload: { bidderId, stripeCustomerId?, issuedAt }, ~1 year TTL with
+ * bounded sliding refresh (re-issued once the cookie is more than half its
+ * TTL old, keeping the same bidderId/stripeCustomerId — see
+ * `getOrCreateBidderPayload`). Reused by every later milestone (M2
+ * claim/bid/prebid, M3 Stripe pre-auth).
  */
 
 const COOKIE_NAME = 'saasity_bidder';
 const TTL_SECONDS = 60 * 60 * 24 * 365; // ~1 year
+// Refresh once a cookie is more than half-way to expiry, so an active
+// bidder is re-issued a fresh ~1 year window well before the old one runs
+// out, while a rewrite doesn't happen on literally every single request.
+const REFRESH_THRESHOLD_SECONDS = TTL_SECONDS / 2;
 const VERSION = 1;
 
 export interface BidderPayload {
@@ -63,31 +70,74 @@ export async function getBidderPayload(): Promise<BidderPayload | null> {
   return parseBidderCookie(store.get(COOKIE_NAME)?.value);
 }
 
-/**
- * Read-or-create (route handlers / server actions only — it may set the
- * cookie). Returns the existing payload when valid, otherwise mints a fresh
- * anonymous bidder and sets a signed httpOnly cookie.
- */
-export async function getOrCreateBidderPayload(): Promise<BidderPayload> {
-  const store = await cookies();
-  const existing = parseBidderCookie(store.get(COOKIE_NAME)?.value);
-  if (existing) return existing;
+/** Seconds since a payload was (last) issued/refreshed. Exported for tests. */
+export function payloadAgeSeconds(payload: BidderPayload, now = Date.now()): number {
+  return (now - payload.issuedAt) / 1000;
+}
 
-  const fresh: BidderPayload = {
-    v: VERSION,
-    bidderId: crypto.randomUUID(),
-    issuedAt: Date.now(),
-  };
+/** Pure decision: does this still-valid payload need a sliding refresh now? */
+export function needsRefresh(payload: BidderPayload, now = Date.now()): boolean {
+  return payloadAgeSeconds(payload, now) > REFRESH_THRESHOLD_SECONDS;
+}
+
+/**
+ * Re-issues a payload with a fresh `issuedAt` (and, once re-serialized, a
+ * fresh HMAC signature) while keeping `bidderId`/`stripeCustomerId`
+ * identical — "rotate the signature without changing the identity".
+ */
+export function refreshPayload(payload: BidderPayload, now = Date.now()): BidderPayload {
+  return { ...payload, issuedAt: now };
+}
+
+function setBidderCookie(
+  store: Awaited<ReturnType<typeof cookies>>,
+  payload: BidderPayload,
+): void {
   store.set({
     name: COOKIE_NAME,
-    value: serializeBidderCookie(fresh),
+    value: serializeBidderCookie(payload),
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     maxAge: TTL_SECONDS,
     path: '/',
   });
+}
+
+/**
+ * Read-or-create (route handlers / server actions only — it may set the
+ * cookie). Returns the existing payload when valid, otherwise mints a fresh
+ * anonymous bidder and sets a signed httpOnly cookie.
+ *
+ * Bounded sliding refresh: a still-valid payload older than
+ * `REFRESH_THRESHOLD_SECONDS` is re-issued with the same `bidderId` /
+ * `stripeCustomerId` but a new `issuedAt` (and therefore a new signature —
+ * "rotate the signature without changing the identity"), extending the
+ * cookie's life by another full TTL from now. An active bidder is never
+ * logged out mid-use; a truly inactive one still hard-expires at the
+ * original TTL because nothing refreshes a payload no request ever reads.
+ */
+export async function getOrCreateBidderPayload(): Promise<BidderPayload> {
+  const store = await cookies();
+  const existing = parseBidderCookie(store.get(COOKIE_NAME)?.value);
+  if (existing) {
+    if (needsRefresh(existing)) {
+      const refreshed = refreshPayload(existing);
+      setBidderCookie(store, refreshed);
+      return refreshed;
+    }
+    return existing;
+  }
+
+  const fresh: BidderPayload = {
+    v: VERSION,
+    bidderId: crypto.randomUUID(),
+    issuedAt: Date.now(),
+  };
+  setBidderCookie(store, fresh);
   return fresh;
 }
 
 export const BIDDER_COOKIE_NAME = COOKIE_NAME;
+export const BIDDER_COOKIE_TTL_SECONDS = TTL_SECONDS;
+export const BIDDER_COOKIE_REFRESH_THRESHOLD_SECONDS = REFRESH_THRESHOLD_SECONDS;

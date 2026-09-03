@@ -157,8 +157,13 @@ model PreBid {
   stripeCustomerId String?
 
   // Stripe pre-authorization for maxBid (PaymentIntent, capture_method=manual),
-  // created at cycle-attach time (7-day hold limit).
-  stripePaymentIntentId String?
+  // created at cycle-attach time (7-day hold limit). Unique so one
+  // PaymentIntent can never settle two PreBids — Postgres unique indexes
+  // allow unlimited NULLs, so this is safe pre-M3 (no row sets this field
+  // yet). Writers MUST go through
+  // src/server/auction/payment-intent.ts#attachStripePaymentIntentId so a
+  // retried attach is idempotent instead of a generic failure.
+  stripePaymentIntentId String? @unique
 
   // PRIVATE — never serialized into any public payload.
   maxBidCents Int

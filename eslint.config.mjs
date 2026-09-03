@@ -20,8 +20,8 @@ const eslintConfig = defineConfig([
     'next-env.d.ts',
     // Generated Prisma client — not source, huge, and already lint-clean upstream.
     'src/generated/**',
-    // Prisma seed reads client from src/generated via relative path; keep seed lintable.
-    'prisma/**',
+    // Only the generated SQL history is excluded — prisma/seed.ts stays lintable.
+    'prisma/migrations/**',
   ]),
 ]);
 

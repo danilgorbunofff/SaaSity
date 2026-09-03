@@ -38,8 +38,31 @@ A committed, deployable Next.js skeleton with Tailwind, core frontend deps, and 
 ## Exit criteria
 
 - [ ] Repo, branch protection (or at least PR habit) and CI-via-Vercel working
+  - > **Correction (Part 2 foundation fix, M2):** GitHub Actions CI now
+    > exists and runs on every push/PR to `main`
+    > (`.github/workflows/ci.yml`: migrate/seed/typecheck/lint/test/build),
+    > but there is no Vercel connection — "CI-via-Vercel" specifically was
+    > never built, a plain GitHub Actions pipeline was, which is a
+    > different (equally valid, but not what this line describes) choice.
+    > Branch protection is not yet enabled; it's a real decision (it
+    > changes how pushes to `main` are allowed) intentionally left for the
+    > repo owner, not something to flip silently from a remediation pass.
+    > See `docs/reviews/m0-m2-remediation/part-02-foundation-delivery-data.md`.
 - [ ] All M0/M1 dependencies installed with pinned versions
+  - > **Correction (Part 2 foundation fix, M2):** `package.json` still uses
+    > caret ranges, not exact versions — that was a deliberate choice, not
+    > an oversight, made explicit now rather than left ambiguous.
+    > Reproducibility comes from the committed `package-lock.json` plus
+    > `npm ci` (used by `postinstall`, the documented clean-checkout path,
+    > and CI), which always installs the exact locked graph regardless of
+    > the ranges in `package.json`. See the README's "Dependency policy"
+    > section and
+    > `docs/reviews/m0-m2-remediation/part-02-foundation-delivery-data.md`.
 - [ ] Deployed URL exists and is referenced in README
+  - > **Correction (Part 2 foundation fix, M2):** still not done — this
+    > requires a Vercel (or equivalent) account action outside anything a
+    > commit alone can do. Flagged as open in
+    > `docs/reviews/m0-m2-remediation/part-02-foundation-delivery-data.md`.
 
 ## Out of scope / notes
 

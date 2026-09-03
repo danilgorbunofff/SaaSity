@@ -1,0 +1,52 @@
+name: Resolve expired auction cycles
+
+# Vercel-plan-independent alternative to vercel.json's `crons` entry. Vercel
+# Hobby projects are capped at one cron run per day (a hard deploy-time
+# rejection above that, not a soft downgrade — see docs/deployment.md), which
+# is far too slow for cycles that end every 6-24 hours and are meant to
+# resolve within minutes. This calls the same GET/POST /api/cron/resolve
+# worker on a 5-minute cadence regardless of hosting plan.
+#
+# Requires two repo secrets that do not exist until the app is actually
+# deployed somewhere (Part 2 remediation: delivery-pipeline-unproven):
+#   RESOLVE_CRON_URL  Full URL, e.g. https://<your-deployment>/api/cron/resolve
+#   WORKER_SECRET     Must equal the deployed environment's WORKER_SECRET
+# Until both are set, every run skips (exits 0) instead of failing, so this
+# file is safe to merge before a deployment exists.
+#
+# Note: GitHub's own scheduler is best-effort, not real-time — runs can be
+# delayed under load, and scheduled workflows are disabled automatically
+# after 60 days with no activity on the default branch (any push resets
+# that clock, so an active repo is unaffected).
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: resolve-cron
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Call /api/cron/resolve
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call worker (skips if secrets not configured yet)
+        env:
+          RESOLVE_CRON_URL: ${{ secrets.RESOLVE_CRON_URL }}
+          WORKER_SECRET: ${{ secrets.WORKER_SECRET }}
+        run: |
+          if [ -z "$RESOLVE_CRON_URL" ] || [ -z "$WORKER_SECRET" ]; then
+            echo "RESOLVE_CRON_URL and/or WORKER_SECRET repo secrets are not set yet - skipping. See docs/deployment.md."
+            exit 0
+          fi
+          status=$(curl -sS -o /tmp/resolve-body.json -w '%{http_code}' -X POST "$RESOLVE_CRON_URL" \
+            -H "Authorization: Bearer $WORKER_SECRET")
+          cat /tmp/resolve-body.json
+          echo
+          if [ "$status" -ge 300 ]; then
+            echo "Worker call failed with HTTP $status"
+            exit 1
+          fi
