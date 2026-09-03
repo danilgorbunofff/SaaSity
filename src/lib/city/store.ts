@@ -7,12 +7,28 @@
  */
 
 import { create } from 'zustand';
-import { deriveOutbidPlotIds, mergeOutbidPlotIds, isOwnedLeading, isTenant } from './ownership';
+import {
+  deriveOutbidPlotIds,
+  deriveOutbidFromPositions,
+  mergeOutbidPlotIds,
+  isOwnedLeading,
+  isTenant,
+  type OwnerPosition,
+} from './ownership';
 import type { PlotDto } from '@/types/api';
+
+export type ConnectionState = 'connecting' | 'live' | 'reconnecting' | 'offline';
 
 export interface CityState {
   plots: Map<string, PlotDto>;
   myPreBidIds: Set<string>;
+  /**
+   * Part 4 `outbid-reconstruction`: the private owner projection backing
+   * snapshot-derived outbid (WHICH plot/cycle we are losing, even after a
+   * refresh that never observed the flip). Refreshed with every snapshot
+   * and after claim/bid/resolution.
+   */
+  myPositions: OwnerPosition[];
   /** Plots where we WERE leading and a rival took the lead this cycle. */
   outbidPlotIds: Set<string>;
   /** Single source of truth for the inspected plot (1.4). null = none. */
@@ -28,11 +44,23 @@ export interface CityState {
   loading: boolean;
   error: string | null;
   lastFetchedAt: number | null;
+  /**
+   * Part 4 realtime hardening: stream health. `connecting` until the first
+   * frame lands, `live` while frames flow, `reconnecting` while the retry
+   * loop owns the socket, `offline` while the browser reports no network.
+   * Quiet auctions stay `live` (silence is normal on 12h cycles) — data
+   * freshness is `lastSyncAt`, not this flag.
+   */
+  connection: ConnectionState;
+  /** Part 4: Date.now() of the last applied snapshot/event/resync. */
+  lastSyncAt: number | null;
 
   setPlots: (plots: PlotDto[]) => void;
   /** Phase 2.4 — patch one plot in place from a realtime event. */
   patchPlot: (plotId: string, patch: Partial<PlotDto>) => void;
   setMyPreBids: (ids: string[]) => void;
+  /** Part 4 — replace the owner projection (ids derive from it too). */
+  setMyPositions: (positions: OwnerPosition[]) => void;
   setSelectedPlotId: (plotId: string | null) => void;
   setHoveredPlotId: (plotId: string | null) => void;
   pulseIdlePlots: () => void;
@@ -41,11 +69,15 @@ export interface CityState {
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   markFetched: () => void;
+  setConnection: (connection: ConnectionState) => void;
+  /** Record a successful server contact (snapshot, event, or resync). */
+  markSynced: () => void;
 }
 
 export const useCityStore = create<CityState>()((set) => ({
   plots: new Map<string, PlotDto>(),
   myPreBidIds: new Set<string>(),
+  myPositions: [],
   outbidPlotIds: new Set<string>(),
   selectedPlotId: null,
   hoveredPlotId: null,
@@ -55,6 +87,8 @@ export const useCityStore = create<CityState>()((set) => ({
   loading: false,
   error: null,
   lastFetchedAt: null,
+  connection: 'connecting',
+  lastSyncAt: null,
 
   setPlots: (plots) =>
     set((state) => {
@@ -63,9 +97,20 @@ export const useCityStore = create<CityState>()((set) => ({
       // the leader id changed while the cycle is still open. Cycle END
       // (LIVE -> IDLE) is a normal lease expiry, not an outbid. Flips MERGE
       // into the existing set (sticky) — a rival's lead persists on every
-      // refetch until we re-take the lead or the cycle ends.
+      // refetch until we re-take the lead or the cycle ends. Part 4 adds the
+      // snapshot-derived set (positions vs. current leaders) to the same
+      // merge, so a refresh WHILE outbid reconstructs the state without
+      // having observed the flip live.
       const flips = deriveOutbidPlotIds(state.plots, next, state.myPreBidIds);
-      const outbid = mergeOutbidPlotIds(state.outbidPlotIds, flips, next, state.myPreBidIds);
+      const fromPositions = deriveOutbidFromPositions(next, state.myPositions);
+      const combined = new Set([...flips, ...fromPositions]);
+      const outbid = mergeOutbidPlotIds(
+        state.outbidPlotIds,
+        combined,
+        next,
+        state.myPreBidIds,
+        state.myPositions,
+      );
       // Fade selection when the plot vanishes from the city (keeps HUD honest).
       if (state.selectedPlotId && !next.has(state.selectedPlotId)) {
         return { plots: next, outbidPlotIds: outbid, selectedPlotId: null };
@@ -83,10 +128,34 @@ export const useCityStore = create<CityState>()((set) => ({
       const next = new Map(state.plots);
       next.set(plotId, patched);
       const flips = deriveOutbidPlotIds(state.plots, next, state.myPreBidIds);
-      const outbid = mergeOutbidPlotIds(state.outbidPlotIds, flips, next, state.myPreBidIds);
+      const fromPositions = deriveOutbidFromPositions(next, state.myPositions);
+      const combined = new Set([...flips, ...fromPositions]);
+      const outbid = mergeOutbidPlotIds(
+        state.outbidPlotIds,
+        combined,
+        next,
+        state.myPreBidIds,
+        state.myPositions,
+      );
       return { plots: next, outbidPlotIds: outbid };
     }),
   setMyPreBids: (ids) => set({ myPreBidIds: new Set(ids) }),
+  // Replacing positions re-derives outbid immediately: ownership may have
+  // changed under us (rows WON/LOST, cycles rotated) and the sticky set
+  // must re-anchor to server truth instead of waiting for the next event.
+  setMyPositions: (positions) =>
+    set((state) => {
+      const myPreBidIds = new Set(positions.map((p) => p.preBidId));
+      const fromPositions = deriveOutbidFromPositions(state.plots, positions);
+      const outbid = mergeOutbidPlotIds(
+        state.outbidPlotIds,
+        fromPositions,
+        state.plots,
+        myPreBidIds,
+        positions,
+      );
+      return { myPositions: positions, myPreBidIds, outbidPlotIds: outbid };
+    }),
   setSelectedPlotId: (plotId) => set({ selectedPlotId: plotId }),
   setHoveredPlotId: (plotId) => set({ hoveredPlotId: plotId }),
   pulseIdlePlots: () => {
@@ -98,6 +167,8 @@ export const useCityStore = create<CityState>()((set) => ({
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
   markFetched: () => set({ lastFetchedAt: Date.now() }),
+  setConnection: (connection) => set({ connection }),
+  markSynced: () => set({ lastSyncAt: Date.now() }),
 }));
 
 /**

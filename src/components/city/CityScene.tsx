@@ -60,12 +60,19 @@ const REFETCH_EVENT = 'city-refetch';
 /**
  * One-shot + focus-refetch binder. Scheduled polling arrives in phase 2;
  * here: mount fetch, window-focus refetch, and manual retry via ErrorChip.
+ *
+ * Part 4 handler-ownership split (deliberate, not duplication): THIS binder
+ * owns DATA (full snapshot including the private owner projection, which
+ * the stream never carries); lib/city/realtime owns the STREAM
+ * (visibilitychange → re-anchor). Focus fires on tab return even when the
+ * stream looks alive but the projection went stale (e.g. outbid in another
+ * tab — same cookie, no cross-tab channel by design).
  */
 function DataBinder() {
   const setLoading = useCityStore((s) => s.setLoading);
   const setError = useCityStore((s) => s.setError);
   const setPlots = useCityStore((s) => s.setPlots);
-  const setMyPreBids = useCityStore((s) => s.setMyPreBids);
+  const setMyPositions = useCityStore((s) => s.setMyPositions);
   const setMockResolveEnabled = useCityStore((s) => s.setMockResolveEnabled);
   const markFetched = useCityStore((s) => s.markFetched);
 
@@ -74,8 +81,11 @@ function DataBinder() {
     setError(null);
     try {
       const snap = await fetchCitySnapshot();
+      // Positions BEFORE plots: setPlots derives snapshot outbid from the
+      // current projection, and setMyPositions re-derives the sticky set —
+      // either order converges, but projection-first avoids one transient.
+      setMyPositions(snap.myPositions);
       setPlots(snap.plots);
-      setMyPreBids(snap.myPreBidIds);
       setMockResolveEnabled(snap.mockResolveEnabled);
       markFetched();
     } catch (e) {
@@ -83,7 +93,7 @@ function DataBinder() {
     } finally {
       setLoading(false);
     }
-  }, [setLoading, setError, setPlots, setMyPreBids, setMockResolveEnabled, markFetched]);
+  }, [setLoading, setError, setPlots, setMyPositions, setMockResolveEnabled, markFetched]);
 
   useEffect(() => {
     void load();

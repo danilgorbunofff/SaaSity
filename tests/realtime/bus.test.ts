@@ -10,6 +10,8 @@ import { test } from 'node:test';
 import {
   subscribe,
   publish,
+  setRealtimeSink,
+  eventKeyOf,
   emitBidPlaced,
   emitCycleExtended,
   emitCycleResolved,
@@ -168,6 +170,8 @@ test('emitCycleResolved carries winner preBidId + tenant brand + next cycle, or 
       cycleId: 'c12',
       endAt: '2026-01-02T00:00:00.000Z',
       openingPriceCents: 2500,
+      currentPriceCents: 2500,
+      leaderPreBidId: 'pb-queued-7',
     },
   });
 
@@ -177,7 +181,15 @@ test('emitCycleResolved carries winner preBidId + tenant brand + next cycle, or 
   assert.equal(ev.winner?.preBidId, 'pb-winner-1');
   assert.deepEqual(ev.winner?.brand, BRAND);
   assert.equal(ev.clearingPriceCents, 2000);
-  assert.deepEqual(ev.nextCycle, { cycleId: 'c12', endAt: '2026-01-02T00:00:00.000Z', openingPriceCents: 2500 });
+  // Part 4 `next-cycle-realtime-state`: the COMPLETE next-cycle public
+  // snapshot rides along — leader pointer + price, never a leader brand.
+  assert.deepEqual(ev.nextCycle, {
+    cycleId: 'c12',
+    endAt: '2026-01-02T00:00:00.000Z',
+    openingPriceCents: 2500,
+    currentPriceCents: 2500,
+    leaderPreBidId: 'pb-queued-7',
+  });
   // Part 4 `public-bidder-id` fix: an anonymous bidder identifier must
   // never be broadcast to every connected client.
   assert.equal('bidderId' in (ev.winner ?? {}), false);
@@ -196,4 +208,55 @@ test('emitCycleResolved carries winner preBidId + tenant brand + next cycle, or 
   assert.equal(seen[1].nextCycle, null);
 
   unsub();
+});
+
+test('eventKeyOf: same logical occurrence shares a key across local + outbox copies; distinct occurrences differ', () => {
+  const base = {
+    type: 'bid:placed' as const,
+    cycleId: 'c1',
+    currentPriceCents: 500,
+    leaderPreBidId: 'pb1',
+    endAt: '2026-01-01T00:00:00.000Z',
+    clearingPriceCents: null,
+  };
+  // Key stability: identical fields → identical key (redelivery dedupes).
+  assert.equal(eventKeyOf(base), eventKeyOf({ ...base }));
+  // Any field change → different key (a new bid/price/leader is new news).
+  assert.notEqual(eventKeyOf(base), eventKeyOf({ ...base, currentPriceCents: 600 }));
+  assert.notEqual(eventKeyOf(base), eventKeyOf({ ...base, leaderPreBidId: 'pb2' }));
+  assert.notEqual(eventKeyOf(base), eventKeyOf({ ...base, cycleId: 'c2' }));
+  // Per-type namespaces never collide.
+  assert.notEqual(
+    eventKeyOf({ type: 'cycle:extended', cycleId: 'c1', currentPriceCents: null, leaderPreBidId: null, endAt: '2026-01-01T00:00:00.000Z', clearingPriceCents: null }),
+    eventKeyOf({ ...base }),
+  );
+  // Resolutions key off the resolved cycle: reconcile replays reuse it.
+  const res = { type: 'cycle:resolved' as const, cycleId: 'c9', currentPriceCents: null, leaderPreBidId: null, endAt: null, clearingPriceCents: 3100 };
+  assert.equal(eventKeyOf(res), eventKeyOf({ ...res }));
+  assert.notEqual(eventKeyOf(res), eventKeyOf({ ...res, cycleId: 'c10' }));
+});
+
+test('durable sink receives every publish; a throwing sink never breaks local delivery', () => {
+  const local: RealtimeEvent[] = [];
+  const sunk: RealtimeEvent[] = [];
+  const unsub = subscribe((ev) => local.push(ev));
+  setRealtimeSink((ev) => sunk.push(ev));
+  try {
+    emitCycleExtended({ plotId: 'F6', cycleId: 'c20', endAt: '2026-01-01T00:10:00.000Z' });
+    assert.equal(local.length, 1);
+    assert.equal(sunk.length, 1);
+    assert.equal(sunk[0].plotId, 'F6');
+
+    // A failing sink is isolated: local subscribers still get the event.
+    setRealtimeSink(() => {
+      throw new Error('outbox down');
+    });
+    emitCycleExtended({ plotId: 'F7', cycleId: 'c21', endAt: '2026-01-01T00:11:00.000Z' });
+    assert.equal(local.length, 2);
+    assert.equal(local[1].plotId, 'F7');
+  } finally {
+    // Unit tests run WITHOUT the sink — restore purity for other files.
+    setRealtimeSink(null);
+    unsub();
+  }
 });

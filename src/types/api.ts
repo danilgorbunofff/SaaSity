@@ -118,5 +118,18 @@ export interface RealtimeEventDto {
    */
   winner: { preBidId: string; brand: TenantBrandDto } | null;
   clearingPriceCents: number | null;
-  nextCycle: { cycleId: string; endAt: string; openingPriceCents: number | null } | null;
+  /**
+   * Part 4 `next-cycle-realtime-state`: the COMPLETE next-cycle public
+   * snapshot — clients swap cycleId/status/leader/price/endAt/tenant
+   * atomically from this object instead of assembling drifting partial
+   * fields. leaderPreBidId is the opaque auction-progress pointer (same
+   * privacy shape as PlotDto.currentLeaderPreBidId); no leader brand ever.
+   */
+  nextCycle: {
+    cycleId: string;
+    endAt: string;
+    openingPriceCents: number | null;
+    currentPriceCents: number | null;
+    leaderPreBidId: string | null;
+  } | null;
 }

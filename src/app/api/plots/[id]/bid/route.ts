@@ -16,6 +16,9 @@ import {
   applySoftClose,
 } from '@/server/auction/engine';
 import { emitBidPlaced, emitCycleExtended, emitCycleResolved } from '@/server/realtime/bus';
+// Part 4 `serverless-local-bus`: registers the durable outbox sink so this
+// process's events fan out cross-instance (not just same-process).
+import '@/server/realtime/outbox';
 import { authorizeAttachedRows } from '@/server/auction/finalize';
 import { parseBody, isSameOrigin, errorJson } from '@/server/auction/http';
 

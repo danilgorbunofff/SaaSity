@@ -19,6 +19,9 @@ import {
 } from '@/server/auction/engine';
 import { authorizeAttachedRows } from '@/server/auction/finalize';
 import { emitBidPlaced, emitCycleResolved } from '@/server/realtime/bus';
+// Part 4 `serverless-local-bus`: registers the durable outbox sink so this
+// process's events fan out cross-instance (not just same-process).
+import '@/server/realtime/outbox';
 import { parseBody, isSameOrigin, errorJson } from '@/server/auction/http';
 
 export const dynamic = 'force-dynamic';

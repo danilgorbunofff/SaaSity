@@ -104,13 +104,111 @@ tenant vs. auction-leader separation. See
 
 ## Additional realtime/client hardening
 
-- [ ] Expose connecting, live, stale, reconnecting, and offline states to users.
-- [ ] Surface failed resynchronization instead of only logging a warning.
-- [ ] Treat malformed frames as a resync condition, not a silent ignore.
-- [ ] Define a maximum stale-data window.
-- [ ] Confirm visibility/focus handlers do not duplicate connections.
-- [ ] Test multiple tabs sharing the same bidder cookie.
-- [ ] Test network offline/online transitions and server restart.
-- [ ] Ensure unknown plots or schema versions trigger a full snapshot.
-- [ ] Record deployed latency and connection lifetime limits.
+- [x] Expose connecting, live, stale, reconnecting, and offline states to users. —
+      TopStrip badge shows `LIVE · {age} / CONNECTING… / RECONNECTING… /
+      OFFLINE` (`role="status"`). Deliberate deviation: no `stale` enum —
+      quiet 12h auctions are healthy silence, so freshness is the visible
+      sync age (`store.lastSyncAt`), never a false alarm.
+- [x] Surface failed resynchronization instead of only logging a warning. —
+      3 consecutive resync failures raise the shared error surface
+      (`ErrorChip` + manual retry); recovery clears only our own message.
+- [x] Treat malformed frames as a resync condition, not a silent ignore. —
+      1–2 bad frames skip; 3 in a row force a snapshot re-anchor. Unknown
+      event *types* stay ignored (forward-compat: listeners are per known
+      type).
+- [x] Define a maximum stale-data window. — Bounded by time-since-lastSyncAt,
+      displayed in the HUD; see "Recorded numbers" below.
+- [x] Confirm visibility/focus handlers do not duplicate connections. —
+      Split deliberately, not duplicated: realtime.ts owns the STREAM
+      (visibilitychange → re-anchor); DataBinder owns DATA (focus →
+      snapshot incl. the projection the stream never carries). One
+      EventSource per page; `stopRealtime` removes every listener (tested).
+- [x] Test multiple tabs sharing the same bidder cookie. — Proof section G:
+      two streams + one shared cookie jar converge on identical payloads.
+- [x] Test network offline/online transitions and server restart. —
+      `tests/city/realtime-connection.test.ts` (offline badges, online
+      re-anchors, wake-up re-anchors, stop cleans up); server restart is
+      covered by the reconnect path (proof section F).
+- [x] Ensure unknown plots or schema versions trigger a full snapshot. —
+      Events naming plots outside the snapshot force a throttled (5s)
+      re-anchor instead of a silent no-op.
+- [x] Record deployed latency and connection lifetime limits. — See
+      "Recorded numbers" below.
+
+## Implementation record (Part 4 build session)
+
+All six findings closed in one surgical pass; 92/92 unit tests green,
+`resolve-worker-proof` PASS, `e2e-full-loop` PASS, and the new
+`scripts/realtime-fanout-proof.ts` (34 checks) PASS against a production
+build with `MOCK_PAYMENTS=1`.
+
+- [x] `serverless-local-bus` — transport: **SSE + Postgres outbox poll, no
+      broker** (scale envelope unchanged: 49 plots, single region,
+      bursty-not-huge). `publish()` fans out to local listeners
+      synchronously AND to the per-process durable sink
+      (`src/server/realtime/outbox.ts`, registered by explicit import in the
+      bid/claim routes and the worker — unit tests import `bus.ts` alone, so
+      publish stays pure under test). Every instance's SSE loop polls rows
+      newer than its cursor; `RealtimeOutbox.seq` (bigserial) is the global
+      order; `eventKeyOf` (bus.ts) is the cross-copy idempotency key;
+      retention is 24h via `pruneOutbox`, called fire-and-forget from the
+      cron resolve route. Bid/claim/worker all publish through the same emit
+      family. The "separate instances" acceptance leg is proven at the
+      shared-table contract level (two independently-pooled Prisma clients:
+      write on one, ordered read on the other) plus a live bid→SSE→outbox
+      walk; true multi-instance soak is a preview-env exercise.
+- [x] `sse-snapshot-race` — subscribe-first + race-window buffer + replay in
+      arrival order; outbox high-watermark read BEFORE the plot query with
+      cursor advance; snapshot∩buffer overlap converges via idempotent
+      field-overwrite patches; local/outbox double delivery dedupes by
+      `eventKeyOf`.
+- [x] `sse-abort-leak` — abort attached before the first await, aborted
+      checks after every await, failed writes return before any timer or
+      listener exists, one idempotent `cleanup` owns listener + heartbeat +
+      poll timer + controller.
+- [x] `next-cycle-realtime-state` — `cycle:resolved.nextCycle` is now the
+      complete public snapshot (`cycleId/endAt/openingPriceCents` +
+      `currentPriceCents/leaderPreBidId` re-read post-rotation); the client
+      swaps all six fields atomically. Leader brand is deliberately NOT
+      included (Part 1: no free exposure pre-payment). Stored-outcome replay
+      gained a staleness guard (staged cycle's `startedAt` must equal the
+      resolved cycle's `resolvedAt`) so a late re-emit can't attach an
+      unrelated newer cycle. Proven by the A→B rotation check with no later
+      bid (event equals `/api/plots` exactly).
+- [x] `outbid-reconstruction` — `/api/me/bids` returns `positions`
+      (`preBidId/plotId/cycleId/status`, caller-scoped, never maxima);
+      `deriveOutbidFromPositions` rebuilds the loss from snapshots;
+      `mergeOutbidPlotIds` clears on rotation/LOST with the projection and
+      re-adds when still losing the fresh cycle; owner refresh after
+      claim/bid/resolution (lightweight `fetchMyPositions`), reconnect, and
+      tab focus.
+- [x] Hardening — TopStrip shows `LIVE · {age} / CONNECTING… /
+      RECONNECTING… / OFFLINE` (`role="status"`); 3 consecutive malformed
+      frames force a re-anchor (unknown *types* stay ignored for
+      forward-compat); online re-anchors, offline badges immediately;
+      visibility (stream, realtime.ts) vs focus (data incl. projection,
+      DataBinder) ownership is split deliberately and documented; multi-tab
+      decision recorded (no shared channel — server is truth,
+      last-write-wins at the API, focus refetch covers the window).
+
+### Recorded numbers (transport decision annex)
+
+- Cross-instance delivery: **≤ ~1s** (`OUTBOX_POLL_MS = 1000` + one indexed
+  range query); same-process stays synchronous. Proof asserts live
+  bid→SSE **<1s** end to end.
+- Outbox retention: **24h** (`OUTBOX_RETENTION_HOURS`), pruned on every cron
+  tick (fire-and-forget; sweep correctness never depends on it).
+- Read cap per poll: **200 rows**, ascending, cursor-advancing past malformed
+  payloads (a poison row can't wedge a consumer).
+- Client retry: EventSource native retry + own backoff **0.5s → 30s max**;
+  retries are unbounded (no polling fallback by design — snapshot re-anchor
+  on reconnect/visibility/focus is the convergence path).
+- Heartbeat: SSE comment every **15s**; browser `fetch` snapshot has no TTL
+  (explicit refetch points, not polling).
+- Stale-data window: bounded by time-since-`lastSyncAt`, displayed in the
+  HUD — there is no silent staleness state, only a visible age.
+- Connection model: one stream per tab; long-lived streams hold one server
+  execution each — if the platform caps concurrent executions, clients
+  degrade to reconnect + focus refetch, and a managed broker replaces the
+  outbox poll (documented evolution path, not needed at this scale).
 

@@ -10,6 +10,7 @@
  */
 
 import { useCityStore } from '@/lib/city/store';
+import type { ConnectionState } from '@/lib/city/store';
 import { useCityValueCents, formatHudCountdown, hudNowMs } from '@/lib/city/hud-hooks';
 import { useTick } from '@/components/city/PlotSkins';
 import { formatPrice } from '@/lib/tiers';
@@ -60,11 +61,63 @@ function useCounters(): Counters {
   };
 }
 
+function formatSyncAge(lastSyncAt: number, now: number): string {
+  const s = Math.max(0, Math.round((now - lastSyncAt) / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  return `${Math.floor(m / 60)}h`;
+}
+
+const CONNECTION_COPY: Record<ConnectionState, { label: string; dot: string; pulse: boolean }> = {
+  live: { label: 'LIVE', dot: 'bg-[#00f0ff]', pulse: false },
+  connecting: { label: 'CONNECTING…', dot: 'bg-[#6b7a8c]', pulse: true },
+  reconnecting: { label: 'RECONNECTING…', dot: 'bg-[#ffb400]', pulse: true },
+  offline: { label: 'OFFLINE', dot: 'bg-[#ff5a5a]', pulse: false },
+};
+
+/**
+ * Part 4 realtime-harden: stream health + data freshness, always visible.
+ * The dot is the socket state; the age is time since the last applied
+ * server contact (snapshot, event, or resync). Quiet auctions read
+ * "LIVE · 12m" — silence is normal on 12h cycles, not staleness.
+ */
+function ConnectionBadge() {
+  const connection = useCityStore((s) => s.connection);
+  const lastSyncAt = useCityStore((s) => s.lastSyncAt);
+  const tick = useTick();
+  void tick; // re-render at most every 5s for the sync age
+  const copy = CONNECTION_COPY[connection];
+  const age = lastSyncAt == null ? null : formatSyncAge(lastSyncAt, hudNowMs());
+  return (
+    <span
+      role="status"
+      aria-label={`Connection ${copy.label}${age ? `, synced ${age} ago` : ''}`}
+      title={
+        connection === 'live'
+          ? 'Live auction feed. Data age counts up between server contacts.'
+          : connection === 'offline'
+            ? 'No network — showing the last synced state. Reconnect to resume live prices.'
+            : 'Reconnecting the live feed — showing the last synced state.'
+      }
+      className="inline-flex items-center gap-1.5"
+    >
+      <span
+        aria-hidden
+        className={`inline-block h-1.5 w-1.5 rounded-full ${copy.dot}${copy.pulse ? ' animate-pulse' : ''}`}
+      />
+      <span className="text-[9px] uppercase tracking-[0.2em] text-[#6b7a8c]">
+        {copy.label}
+        {connection === 'live' && age ? <span className="ml-1 normal-case tracking-normal">· {age}</span> : null}
+      </span>
+    </span>
+  );
+}
+
 export function TopStrip() {
   const counters = useCounters();
   const valueCents = useCityValueCents();
   const loading = useCityStore((s) => s.loading);
-
   return (
     <div
       data-testid="hud-top-strip"
@@ -100,6 +153,8 @@ export function TopStrip() {
         <span className="text-[9px] text-[#6b7a8c]">outbid</span>
       </span>
       {loading ? <span className="ml-2 animate-pulse text-[#6b7a8c]">SYNCING…</span> : null}
+      <span className="mx-2 text-[#2a3a46]">|</span>
+      <ConnectionBadge />
     </div>
   );
 }

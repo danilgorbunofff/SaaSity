@@ -1,11 +1,18 @@
 /**
- * Phase 2.4 — in-process realtime pub/sub bus + typed emit helpers.
+ * Phase 2.4 — in-process realtime pub/sub bus + typed emit helpers, hardened
+ * by Part 4 (`serverless-local-bus`) with a durable DB outbox behind it.
  *
- * Transport decision made once in phase 0.2 (SSE + in-process bus over
- * Supabase Realtime — 49 plots, single region, bursty-not-huge fan-out);
- * 2.4 implements it. Every producer (bid/claim routes, worker) publishes
- * through the emit* family so M3's Stripe flow gets realtime updates for
- * free once it calls the same code paths.
+ * Transport: SSE + outbox-backed fan-out (Neon Postgres only — no extra
+ * broker). `publish()` notifies local listeners synchronously (same-process
+ * immediacy) AND hands the event to the durable sink installed per server
+ * process by `./outbox`; every instance's SSE loop polls rows newer than its
+ * cursor, so cross-instance delivery lands within OUTBOX_POLL_MS. The
+ * process-local Set is therefore a latency optimization, never the fan-out
+ * infrastructure — a bid handled by instance B reaches a browser on instance
+ * A through the outbox even when the two processes share nothing else.
+ * Every producer (bid/claim routes, worker) publishes through the emit*
+ * family so M3's Stripe flow gets realtime updates for free once it calls
+ * the same code paths.
  *
  * Privacy invariant (binding, from 0.3 + Part 1 lifecycle fix): maxBidCents,
  * non-leading bidders' brand/identity, AND the current auction's
@@ -28,7 +35,20 @@ export interface RealtimeEvent {
   endAt: string | null;
   winner: { preBidId: string; brand: TenantBrandDto } | null;
   clearingPriceCents: number | null;
-  nextCycle: { cycleId: string; endAt: string; openingPriceCents: number | null } | null;
+  /**
+   * Part 4 `next-cycle-realtime-state`: the COMPLETE next-cycle public
+   * snapshot (never partial). leaderPreBidId is the opaque auction-progress
+   * pointer — same privacy shape as PlotDto.currentLeaderPreBidId; the
+   * provisional leader's brand is NEVER included (Part 1: no free exposure
+   * before payment).
+   */
+  nextCycle: {
+    cycleId: string;
+    endAt: string;
+    openingPriceCents: number | null;
+    currentPriceCents: number | null;
+    leaderPreBidId: string | null;
+  } | null;
 }
 
 /** Public brand snapshot as carried by engine Resolution / PreBid rows. */
@@ -52,6 +72,21 @@ export function subscribe(listener: Listener): () => void {
   };
 }
 
+/**
+ * Part 4 `serverless-local-bus`: the Set above only reaches listeners in
+ * THIS process. A durable cross-instance sink (the DB outbox — see
+ * `./outbox`) is registered per server process via `setRealtimeSink`; every
+ * `publish` below fans out locally AND hands the event to the sink, so worker
+ * events and API mutation events share one transport. Unit tests import this
+ * module WITHOUT the sink installed, which keeps publish pure and DB-free.
+ */
+type DurableSink = (event: RealtimeEvent) => void;
+let durableSink: DurableSink | null = null;
+
+export function setRealtimeSink(sink: DurableSink | null): void {
+  durableSink = sink;
+}
+
 export function publish(event: RealtimeEvent): void {
   for (const listener of listeners) {
     try {
@@ -60,6 +95,40 @@ export function publish(event: RealtimeEvent): void {
       // One bad consumer must never break the publish loop.
       listeners.delete(listener);
     }
+  }
+  if (durableSink) {
+    try {
+      durableSink(event);
+    } catch (err) {
+      // Cross-instance fan-out must never break the request path or the
+      // local loop above — the failure is logged for ops alerting.
+      console.error('[realtime] durable sink failed', err);
+    }
+  }
+}
+
+/**
+ * Natural idempotency key for an event — stable across the local bus and an
+ * outbox redelivery of the same logical occurrence, so the SSE route (and
+ * any future consumer) can dedupe without a shared sequence space:
+ *   bid:placed     → one key per (cycle, price, leader) triple;
+ *   cycle:extended → one key per (cycle, endAt) pair;
+ *   cycle:resolved → one key per resolved cycle (emitted exactly once per
+ *                    resolution; reconcile replays reuse the same cycleId).
+ */
+export function eventKeyOf(
+  event: Pick<
+    RealtimeEvent,
+    'type' | 'cycleId' | 'currentPriceCents' | 'leaderPreBidId' | 'endAt' | 'clearingPriceCents'
+  >,
+): string {
+  switch (event.type) {
+    case 'bid:placed':
+      return `bid:${event.cycleId}:${event.currentPriceCents}:${event.leaderPreBidId}`;
+    case 'cycle:extended':
+      return `ext:${event.cycleId}:${event.endAt}`;
+    case 'cycle:resolved':
+      return `res:${event.cycleId}:${event.clearingPriceCents}`;
   }
 }
 
@@ -147,7 +216,13 @@ export function emitCycleResolved(input: {
   cycleId: string;
   winner: { preBidId: string; brand: BrandSnapshot } | null;
   clearingPriceCents: number | null;
-  nextCycle: { cycleId: string; endAt: string; openingPriceCents: number | null } | null;
+  nextCycle: {
+    cycleId: string;
+    endAt: string;
+    openingPriceCents: number | null;
+    currentPriceCents: number | null;
+    leaderPreBidId: string | null;
+  } | null;
 }): void {
   emit('cycle:resolved', {
     plotId: input.plotId,

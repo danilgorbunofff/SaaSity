@@ -292,3 +292,26 @@ model SettlementAttempt {
   @@index([cycleId, status])
   @@index([idempotencyKey])
 }
+
+// Part 4 deploy-safe fan-out (`serverless-local-bus`): durable outbox behind
+// the in-process bus. publish() notifies local listeners synchronously AND
+// persists one row here; every server instance's SSE loop polls rows newer
+// than its cursor, so a bid handled by instance B reaches a browser on
+// instance A within the poll interval — no shared memory assumed.
+//
+// Ordering: `seq` (bigserial) is the canonical global order. Retention: rows
+// older than OUTBOX_RETENTION_HOURS are pruned by the cron resolve route
+// (fire-and-forget; SSE cursors only ever trail by seconds). At-least-once:
+// a crash between local notify and persist may skip cross-instance delivery
+// of one event (logged server-side); consumers dedupe by the event's natural
+// key and re-anchor from snapshots, so a redelivery is always a no-op.
+model RealtimeOutbox {
+  seq       BigInt   @id @default(autoincrement())
+  type      String
+  plotId    String
+  payload   Json
+  createdAt DateTime @default(now())
+
+  @@index([seq])
+  @@index([plotId, seq])
+}

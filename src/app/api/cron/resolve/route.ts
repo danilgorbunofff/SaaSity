@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { resolveEndedCycles } from '@/server/auction/worker';
+import { pruneOutbox } from '@/server/realtime/outbox';
 
 // Settlement trigger for the external schedulers (Part 3:
 // cron-not-configured). Primary: .github/workflows/resolve-cron.yml every 5
@@ -23,6 +24,12 @@ async function handle(req: Request) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
   }
   const result = await resolveEndedCycles();
+  // Part 4 outbox retention: prune rows older than the window. Fire-and-
+  // forget — sweep correctness never depends on it, and a prune failure
+  // must not fail the settlement response.
+  void pruneOutbox().catch((err) => {
+    console.error('[cron] outbox prune failed', err);
+  });
   return NextResponse.json({ ok: true, ...result });
 }
 

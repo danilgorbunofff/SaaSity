@@ -12,6 +12,10 @@ import {
   authorizeAttachedRows,
 } from '@/server/auction/finalize';
 import { emitCycleResolved } from '@/server/realtime/bus';
+// Part 4 `serverless-local-bus`: registers the durable outbox sink so worker
+// resolutions fan out cross-instance. Covers the cron sweep and the dev
+// fast-forward (both call into this module).
+import '@/server/realtime/outbox';
 import { TIERS, RESOLVING_TIMEOUT_MINUTES, STALE_ENDED_CYCLE_ALERT_MINUTES } from '@/lib/tiers';
 
 /**
@@ -66,6 +70,12 @@ export interface Outcome {
   nextCycleId: string | null;
   nextEndAt: Date | null;
   openingPriceCents: number | null;
+  // Part 4 `next-cycle-realtime-state`: the COMPLETE next-cycle public
+  // snapshot — leader pointer + price as rotation tx B left them — so
+  // consumers swap cycleId/status/leader/price/endAt atomically instead of
+  // marking the next cycle LIVE while showing the previous winner's brand.
+  nextLeaderPreBidId: string | null;
+  nextCurrentPriceCents: number | null;
 }
 
 async function recoverStuckResolving(now: Date): Promise<number> {
@@ -148,6 +158,10 @@ async function settleAndRotate(args: {
   nextCycleId: string | null;
   nextEndAt: Date | null;
   openingPriceCents: number | null;
+  // Complete next-cycle public snapshot (see Outcome): leader pointer and
+  // price as rotation tx B left them.
+  nextLeaderPreBidId: string | null;
+  nextCurrentPriceCents: number | null;
 } | null> {
   const { cycleId, plotId, plotTier, now, winnerPreBidId, clearingPriceCents } = args;
   // ---- Final tx A: settle rows, rotate tenant data, stage next cycle ----
@@ -338,11 +352,31 @@ async function settleAndRotate(args: {
       }
     }
   }
+  // ---- Post-rotation read: the complete next-cycle public snapshot ----
+  // Rotation tx B ran resolveCycle over the survivors, which wrote the next
+  // cycle's price and the plot's leader pointer. Re-read both OUTSIDE any
+  // tx (pure reads) so the published event carries the exact state a fresh
+  // /api/plots caller would see — Part 4 `next-cycle-realtime-state`.
+  let nextLeaderPreBidId: string | null = null;
+  let nextCurrentPriceCents: number | null = null;
+  if (nextCycleId !== null) {
+    const [plot, nextCycle] = await Promise.all([
+      prisma.plot.findUnique({ where: { id: plotId }, select: { currentLeaderPreBidId: true } }),
+      prisma.auctionCycle.findUnique({
+        where: { id: nextCycleId },
+        select: { currentPriceCents: true },
+      }),
+    ]);
+    nextLeaderPreBidId = plot?.currentLeaderPreBidId ?? null;
+    nextCurrentPriceCents = nextCycle?.currentPriceCents ?? null;
+  }
   return {
     winnerRow: settled.winnerRow,
     nextCycleId,
     nextEndAt,
     openingPriceCents,
+    nextLeaderPreBidId,
+    nextCurrentPriceCents,
   };
 }
 
@@ -477,7 +511,7 @@ export async function resolveOneCycle(cycleId: string, now: Date): Promise<Outco
     });
 
     if (settled === null) return null;
-    const { nextCycleId, nextEndAt, openingPriceCents } = settled;
+    const { nextCycleId, nextEndAt, openingPriceCents, nextLeaderPreBidId, nextCurrentPriceCents } = settled;
 
     const outcome: Outcome = buildOutcome({
       plotId,
@@ -488,6 +522,8 @@ export async function resolveOneCycle(cycleId: string, now: Date): Promise<Outco
       nextCycleId,
       nextEndAt,
       openingPriceCents,
+      nextLeaderPreBidId,
+      nextCurrentPriceCents,
     });
 
     // ONE spec-shaped event per resolution, emitted HERE (not by callers):
@@ -643,6 +679,8 @@ function buildOutcome(args: {
   nextCycleId: string | null;
   nextEndAt: Date | null;
   openingPriceCents: number | null;
+  nextLeaderPreBidId: string | null;
+  nextCurrentPriceCents: number | null;
 }): Outcome {
   return {
     plotId: args.plotId,
@@ -662,6 +700,8 @@ function buildOutcome(args: {
     nextCycleId: args.nextCycleId,
     nextEndAt: args.nextEndAt,
     openingPriceCents: args.openingPriceCents,
+    nextLeaderPreBidId: args.nextLeaderPreBidId,
+    nextCurrentPriceCents: args.nextCurrentPriceCents,
   };
 }
 
@@ -680,6 +720,8 @@ function publishOutcome(outcome: Outcome): void {
             cycleId: outcome.nextCycleId,
             endAt: outcome.nextEndAt.toISOString(),
             openingPriceCents: outcome.openingPriceCents,
+            currentPriceCents: outcome.nextCurrentPriceCents,
+            leaderPreBidId: outcome.nextLeaderPreBidId,
           }
         : null,
   });
@@ -729,6 +771,8 @@ export async function reconcileCapturedCycle(cycleId: string, now: Date): Promis
     nextCycleId: settled.nextCycleId,
     nextEndAt: settled.nextEndAt,
     openingPriceCents: settled.openingPriceCents,
+    nextLeaderPreBidId: settled.nextLeaderPreBidId,
+    nextCurrentPriceCents: settled.nextCurrentPriceCents,
   });
   publishOutcome(outcome);
   return outcome;
@@ -749,14 +793,31 @@ async function readStoredOutcome(cycleId: string): Promise<Outcome | null> {
     plot?.currentCycleId != null
       ? await prisma.auctionCycle.findUnique({ where: { id: plot.currentCycleId } })
       : null;
+  // Staleness guard: the staged next cycle is created in the SAME tx (and
+  // the same `now`) that marks this cycle RESOLVED, so its startedAt equals
+  // resolvedAt exactly. If the plot has since moved on (a later resolution
+  // staged a NEWER cycle), this stored replay must not present that newer
+  // cycle — or its leader — as this resolution's outcome; consumers would
+  // otherwise regress tenant/cycle state from a stale event.
+  const nextIsOurs =
+    nextCycle != null &&
+    nextCycle.status === 'OPEN' &&
+    cycle.resolvedAt != null &&
+    nextCycle.startedAt.getTime() === cycle.resolvedAt.getTime();
   return buildOutcome({
     plotId: cycle.plotId,
     cycleId,
     winnerPreBidId: cycle.winnerPreBidId,
     winnerRow,
     clearingPriceCents: cycle.clearingPriceCents,
-    nextCycleId: nextCycle && nextCycle.status === 'OPEN' ? nextCycle.id : null,
-    nextEndAt: nextCycle && nextCycle.status === 'OPEN' ? nextCycle.endAt : null,
-    openingPriceCents: nextCycle?.currentPriceCents ?? null,
+    nextCycleId: nextIsOurs ? nextCycle.id : null,
+    nextEndAt: nextIsOurs ? nextCycle.endAt : null,
+    openingPriceCents: nextIsOurs ? (nextCycle.currentPriceCents ?? null) : null,
+    // Stored-outcome replay: the plot row holds the same leader pointer and
+    // the next cycle row its price — identical to the live path's post-
+    // rotation read above. A CANCELLED/vanished/stale next cycle yields
+    // nulls, and publishOutcome then omits nextCycle entirely (same as live).
+    nextLeaderPreBidId: nextIsOurs ? (plot?.currentLeaderPreBidId ?? null) : null,
+    nextCurrentPriceCents: nextIsOurs ? (nextCycle.currentPriceCents ?? null) : null,
   });
 }
