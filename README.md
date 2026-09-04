@@ -25,9 +25,9 @@ A 10×10 isometric cyberpunk city where SaaS founders bid in recurring timed auc
 
 ## Getting started
 
-**Requires Node.js ≥20.9 and npm ≥10** (matches Next.js 16's own `engines`
-requirement; also declared in `package.json#engines`, which npm enforces
-during `npm install`).
+**Requires Node.js ≥22.0 and npm ≥10** (Prisma 7's transitive
+`@prisma/streams-local` requires Node ≥22; also declared in
+`package.json#engines`, which npm enforces during `npm install`).
 
 ```bash
 # 1. Install

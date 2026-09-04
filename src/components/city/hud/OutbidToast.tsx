@@ -58,9 +58,14 @@ export function OutbidToast() {
   }, [toasts.length]);
 
   useEffect(() => {
-    // FIFO: Escape dismisses the OLDEST visible toast first.
+    // FIFO: Escape dismisses the OLDEST visible toast first — unless a
+    // modal owns Escape (BidModal form / discard-confirm), which has its
+    // own deterministic Escape handling that must win.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setToasts((prev) => prev.slice(1));
+      if (e.key !== 'Escape') return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest?.('[role="dialog"], [role="alertdialog"]')) return;
+      setToasts((prev) => prev.slice(1));
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

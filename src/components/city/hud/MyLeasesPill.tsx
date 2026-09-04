@@ -21,11 +21,18 @@ export function MyLeasesPill() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
+  // Focus returns to the trigger on EVERY close path — keyboard users who
+  // opened the menu then clicked outside keep their place.
+  const closeAndRestore = () => {
+    setOpen(false);
+    window.setTimeout(() => triggerRef.current?.focus(), 0);
+  };
+
   // Close when clicking outside the dropdown.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) closeAndRestore();
     };
     window.addEventListener('mousedown', onDown);
     return () => window.removeEventListener('mousedown', onDown);
@@ -40,11 +47,6 @@ export function MyLeasesPill() {
     }, 0);
     return () => window.clearTimeout(t);
   }, [open]);
-
-  const closeAndRestore = () => {
-    setOpen(false);
-    window.setTimeout(() => triggerRef.current?.focus(), 0);
-  };
 
   // Keyboard: arrows/Home/End move focus, Enter handled by the button
   // itself, Escape closes and restores focus to the trigger.

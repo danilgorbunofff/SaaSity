@@ -9,13 +9,13 @@ The module-level listener set only connects requests inside one Node process.
 Vercel may route bid mutations and SSE clients to different instances, so local
 success does not prove deployed fan-out.
 
-- [ ] Select a deploy-safe transport for Neon + Vercel.
-- [ ] Prefer a managed shared broker or a deliberately designed polling model;
-      do not treat a process-local Set as cross-instance infrastructure.
-- [ ] Define ordering, retry, deduplication, retention, and reconnect behavior.
-- [ ] Ensure worker events and API mutation events use the same transport.
-- [ ] Remove process-local assumptions from rate limiting and sweep scheduling.
-- [ ] Test with publishers and subscribers in separate processes/instances.
+- [x] Select a deploy-safe transport for Neon + Vercel. — SSE + Postgres outbox poll (record below).
+- [x] Prefer a managed shared broker or a deliberately designed polling model;
+      do not treat a process-local Set as cross-instance infrastructure. — Deliberately designed polling model (record below).
+- [x] Define ordering, retry, deduplication, retention, and reconnect behavior. — `RealtimeOutbox.seq` order, fire-and-forget + resync retry, `eventKeyOf` dedup, 24h retention (record below).
+- [x] Ensure worker events and API mutation events use the same transport. — Same emit family via `outbox.ts` (record below).
+- [~] Remove process-local assumptions from rate limiting and sweep scheduling. — Honestly still per-process: rate limit is a fail-open abuse guard (Redis = documented evolution path), the sweep only invokes the idempotent worker path (record below).
+- [ ] Test with publishers and subscribers in separate processes/instances. — Proven at the shared-table contract level + live walk only; true multi-instance soak is a preview-env exercise (record below).
 
 **Acceptance:** a bid handled by instance B reaches a browser connected to
 instance A within the documented latency.
@@ -25,24 +25,24 @@ instance A within the documented latency.
 The route reads and sends the snapshot before subscribing. An event committed
 in that window is absent from both snapshot and stream, with no sequence gap.
 
-- [ ] Subscribe before the snapshot read and buffer events until the snapshot
-      has been flushed, or use a durable global sequence/cursor.
-- [ ] Apply buffered events in canonical order.
-- [ ] Make event application idempotent.
-- [ ] Test a mutation committed between query start, query completion, snapshot
-      send, and subscription activation.
+- [x] Subscribe before the snapshot read and buffer events until the snapshot
+      has been flushed, or use a durable global sequence/cursor. — Subscribe-first + outbox high-watermark (record below).
+- [x] Apply buffered events in canonical order. — Arrival-order replay (record below).
+- [x] Make event application idempotent. — Field-overwrite patches + `eventKeyOf` dedup (record below).
+- [x] Test a mutation committed between query start, query completion, snapshot
+      send, and subscription activation. — `scripts/realtime-fanout-proof.ts` (live-env proof, record below).
 
 ## [High] `sse-abort-leak`
 
 If snapshot enqueue fails, cleanup runs before listener/timer creation but the
 startup function continues and creates both afterward.
 
-- [ ] Attach the abort handler before the first asynchronous operation.
-- [ ] Check `request.signal.aborted` after every awaited initialization step.
-- [ ] Stop initialization immediately after a failed write.
-- [ ] Guarantee one cleanup path removes listener, heartbeat, buffers, and
-      request references.
-- [ ] Load-test slow snapshot queries with repeated disconnects.
+- [x] Attach the abort handler before the first asynchronous operation. — Verified line-exact (reverification below).
+- [x] Check `request.signal.aborted` after every awaited initialization step. — Verified line-exact (reverification below).
+- [x] Stop initialization immediately after a failed write. — End-state verified (reverification below).
+- [x] Guarantee one cleanup path removes listener, heartbeat, buffers, and
+      request references. — Idempotent `cleanup` (reverification below).
+- [ ] Load-test slow snapshot queries with repeated disconnects. — Honestly open: no load test exists.
 
 ## [High] `next-cycle-realtime-state`
 
@@ -50,12 +50,12 @@ startup function continues and creates both afterward.
 end time, and price. The client marks the next cycle LIVE while clearing its
 real leader ID and showing the old winner's brand.
 
-- [ ] Define the event from the Part 1 lifecycle model.
-- [ ] Include the complete next-cycle public snapshot, including the correct
-      leader brand and leader PreBid ID when those remain public.
-- [ ] Prefer one serialized `PlotDto` replacement over partial, drifting fields.
-- [ ] Update `cycleId`, status, leader, price, end time, and ownership atomically.
-- [ ] Test previous winner A rotating into next-cycle leader B with no later bid.
+- [x] Define the event from the Part 1 lifecycle model. — `nextCycle` public snapshot incl. leader pointer, no leader brand (record below).
+- [x] Include the complete next-cycle public snapshot, including the correct
+      leader brand and leader PreBid ID when those remain public. — All fields incl. `leaderPreBidId`; brand deliberately excluded pre-payment (record below).
+- [x] Prefer one serialized `PlotDto` replacement over partial, drifting fields. — Atomic six-field swap (record below).
+- [x] Update `cycleId`, status, leader, price, end time, and ownership atomically. — Verified (reverification below).
+- [x] Test previous winner A rotating into next-cycle leader B with no later bid. — Rotation check, event equals `/api/plots` (record below).
 
 ## [High] `outbid-reconstruction`
 
@@ -63,20 +63,20 @@ The private endpoint returns only the caller's PreBid IDs. The client can know
 whether it currently leads, but cannot reconstruct which live plot/cycle it has
 lost after refresh. Outbid state exists only when a lead flip was observed.
 
-- [ ] Return a privacy-safe owner projection such as PreBid ID, plot ID,
-      cycle ID, and status; never return maxima in the public or list payload.
-- [ ] Derive owned, active-but-outbid, won, and inactive states from current
-      server snapshots rather than historical client transitions.
-- [ ] Refresh owner state after claim, bid, resolution, reconnect, and tab wake.
-- [ ] Clear outbid state when a cycle changes.
-- [ ] Test refresh while outbid and immediate next-cycle rotation.
+- [x] Return a privacy-safe owner projection such as PreBid ID, plot ID,
+      cycle ID, and status; never return maxima in the public or list payload. — `/api/me/bids` positions (record below).
+- [x] Derive owned, active-but-outbid, won, and inactive states from current
+      server snapshots rather than historical client transitions. — `deriveOutbidFromPositions` (record below).
+- [x] Refresh owner state after claim, bid, resolution, reconnect, and tab wake. — Verified paths (reverification below).
+- [x] Clear outbid state when a cycle changes. — `mergeOutbidPlotIds` (record below).
+- [x] Test refresh while outbid and immediate next-cycle rotation. — `tests/city/ownership.test.ts` + `tests/city/realtime-apply.test.ts`.
 
 ## [High] `public-bidder-id`
 
 The unauthenticated resolution stream includes the stable site-wide bidder ID.
 The client does not use it, and it enables long-term cross-brand correlation.
 
-**Status: resolved as a side effect of the Part 1 lifecycle fix (uncommitted).**
+**Status: resolved as a side effect of the Part 1 lifecycle fix (committed).**
 `winner.bidderId` was replaced with `winner.preBidId` (opaque, meaningless
 without the matching row in the caller's own private `/api/me/bids` list —
 the same reasoning already applied to the pre-existing public

@@ -113,8 +113,17 @@ interface ResolveOptions {
    * When the resolution price equals this caller's submitted max (and they
    * lead), the ledger tick is attributed as their manual bid rather than a
    * proxy tick. Undefined (pre-bid attach) always records proxy.
+   * Kept as a fallback for callers that cannot name their own row (proof
+   * scripts); routes prefer `humanIds` identity below.
    */
   humanSubmitCents?: number;
+  /**
+   * The triggering request's own row identity. When present, the ledger
+   * tick is manual (`isProxy=false`) iff the resolution leader IS this
+   * row — identity, not price equality, so a proxy auto-tick that lands
+   * exactly on the human's max can never steal manual attribution.
+   */
+  humanIds?: { preBidId: string; bidderId: string };
   /**
    * When the triggering request extended the soft-close window
    * (applySoftClose returned extended=true), the single ledger row this
@@ -169,8 +178,9 @@ export async function resolveCycle(
   if (!resolution) return null;
 
   const priceChanged = resolution.priceCents !== cycle.currentPriceCents;
-  const plotIsLeader =
-    options.humanSubmitCents !== undefined && resolution.priceCents === options.humanSubmitCents;
+  const plotIsLeader = options.humanIds
+    ? resolution.leaderPreBidId === options.humanIds.preBidId
+    : options.humanSubmitCents !== undefined && resolution.priceCents === options.humanSubmitCents;
 
   if (priceChanged) {
     await tx.bid.create({
@@ -363,17 +373,25 @@ export async function upsertPreBid(
     // Upward-only: attaching a queued row into a cycle (claim path) or
     // re-stating it (pre-bid path) must never lower the existing commitment
     // — a stale tab submitting a lower max keeps the higher standing max,
-    // while the row still attaches to its target cycle.
+    // while the row still attaches to its target cycle. The brand follows
+    // the winning max: a stale lower-max submit must not rewrite the brand
+    // either (the modal's "billboard is newer" confirm is client-only, so
+    // the server enforces it here).
+    const incomingWins = args.maxBidCents > queued.maxBidCents;
     await tx.preBid.update({
       where: { id: queued.id },
       data: {
         maxBidCents: Math.max(queued.maxBidCents, args.maxBidCents),
         cycleId: args.cycleId,
-        companyName: args.brand.companyName,
-        tagline: args.brand.tagline ?? null,
-        targetUrl: args.brand.targetUrl,
-        twitterHandle: args.brand.twitterHandle,
-        mrrText: args.brand.mrrText ?? null,
+        ...(incomingWins
+          ? {
+              companyName: args.brand.companyName,
+              tagline: args.brand.tagline ?? null,
+              targetUrl: args.brand.targetUrl,
+              twitterHandle: args.brand.twitterHandle,
+              mrrText: args.brand.mrrText ?? null,
+            }
+          : {}),
       },
     });
     return queued.id;

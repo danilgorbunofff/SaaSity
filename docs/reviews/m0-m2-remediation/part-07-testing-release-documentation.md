@@ -75,7 +75,7 @@ M2 says Not started while individual phases claim Done.
 - [x] Distinguish implemented, locally verified, preview verified, and production
       verified states. — vocabulary note in roadmap; 2.4/2.5 evidence stamped LOCAL-ONLY.
 - [x] Remove dates/claims that cannot be reproduced. — 2.4 "prod server on :3457" reworded to local prod-mode server; M0 "Done (2026-09-01)" replaced with state descriptions.
-- [ ] Update status only after the complete workstream is reviewed. — PROCESS RULE, kept: Parts 4–6 rows in the remediation index stay 🟡 (Part 6 uncommitted; Parts 4–5 committed but Part 7 gate still running); M3 stays 🔴 Blocked.
+- [ ] Update status only after the complete workstream is reviewed. — PROCESS RULE, kept: Parts 4–6 rows in the remediation index stay 🟡 (all committed; Part 7 gate still running); M3 stays 🔴 Blocked.
 
 ## Documentation corrections
 

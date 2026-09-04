@@ -44,7 +44,8 @@ while giving the charged winner no guaranteed benefit after resolution.
 
 ### Implementation checklist for Model A
 
-**Status: implemented and validated (uncommitted).** See "Implementation
+**Status: implemented, validated and committed** (commit `e0ad13c`; later
+follow-ups bundled in `a969e0a`). See "Implementation
 evidence log" at the end of this document for the full validation record.
 Honest per-item breakdown below — every checked item was proven at runtime,
 not just typed.
@@ -263,5 +264,7 @@ a `brand` to `emitBidPlaced`.
   fixed calendar term. Confirmed with the product owner as the intended
   reading of Model A before implementation began — flagged again here in
   case expectations differ from what shipped.
-- Nothing in this pass has been committed. All changes are uncommitted in
-  the working tree pending explicit instruction to commit.
+- Commit boundary (2026-09-03): this pass landed as `e0ad13c`; later
+  workstreams followed as direct-to-`main` commits (`76f82ea`,
+  `330cb53`, `1bbe913`, bundled `a969e0a` for Parts 4–7 fixes). Uncommitted
+  changes, if any, are the current session's follow-up fixes only.

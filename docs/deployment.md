@@ -138,7 +138,28 @@ settlement spanning one missed tick is never mistaken for stuck; the
   the primary is lagging or dead; investigate before the daily net becomes
   the only path.
 
-## 4. Go-live checklist
+## 4. Live updates (SSE) through proxies and platform limits
+
+`/api/events` is a long-lived `text/event-stream` response (one stream per
+tab, 15s heartbeat comments, `Cache-Control: no-cache, no-transform`). It
+has been proven locally and in CI-shaped environments only — never through
+a deployed gateway yet. When the first preview deployment exists, verify:
+
+- **Buffering:** any reverse proxy/CDN in front must not buffer the stream
+  (`X-Accel-Buffering: no` on nginx-style layers; compression OFF for this
+  route — `no-transform` asks for that, but not every CDN honors it).
+  Symptom of buffering: prices update only on reconnect/focus refetch,
+  never live.
+- **Execution lifetime:** serverless platforms cap how long one function
+  execution may live. A killed stream is NOT an outage by design — the
+  client re-anchors via EventSource retry + reconnect/visibility/focus
+  resync — but if the platform cap is shorter than ~60s, live updates
+  degrade to polling-shaped traffic; a managed broker replaces the outbox
+  poll at that point (documented evolution path in the Part 4 doc).
+- **Concurrency:** one execution per open tab. Preview-test with 3+ tabs
+  and confirm all stay LIVE in the HUD.
+
+## 5. Go-live checklist
 
 - [ ] Database provisioned (separate Production/Preview instances)
 - [ ] `prisma migrate deploy` run against each database

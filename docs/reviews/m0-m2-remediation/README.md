@@ -17,7 +17,7 @@ required implementation and its acceptance evidence both exist.
 | 3 | [Auction engine, worker, and payments](part-03-auction-engine-worker-payments.md) | Race safety, proxy rules, soft-close, settlement, scheduling | 8 | ✅ Implemented + validated + committed (`76f82ea`) |
 | 4 | [Realtime and client state](part-04-realtime-client-state.md) | Deploy-safe fan-out, SSE lifecycle, ownership/outbid synchronization | 6 | 🟡 Implemented + committed (`330cb53`) — resolution notes in doc; Part 7 gate pending |
 | 5 | [3D city and performance](part-05-3d-city-performance.md) | OUTER regression, selection, motion, mobile performance | 5 | 🟡 Implemented + committed (`1bbe913`) — browser/device evidence boxes honestly open; Part 7 gate pending |
-| 6 | [UI, UX, and accessibility](part-06-ui-ux-accessibility.md) | Bid flow, responsive HUD, accessibility, onboarding, interaction | 12 | 🟡 Implemented locally, uncommitted — pending commit, then Part 7 gate |
+| 6 | [UI, UX, and accessibility](part-06-ui-ux-accessibility.md) | Bid flow, responsive HUD, accessibility, onboarding, interaction | 12 | 🟡 Implemented + committed (`a969e0a`, bundled with Parts 4/5/7 fixes) — Part 7 gate pending |
 | 7 | [Testing, release, and documentation](part-07-testing-release-documentation.md) | Integration coverage, preview proof, truthful milestone status | 3 | 🟡 In progress (this session) |
 
 ## Required execution order

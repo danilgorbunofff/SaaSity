@@ -188,3 +188,12 @@ test('parseDollarsToCents rejects over-maximum values', () => {
   assert.equal(parseDollarsToCents('100000.01').ok, false);
   assert.equal(MAX_BID_CENTS, 10_000_000);
 });
+
+test('P1-1: shared contract rejects over-maximum maxBidCents (server + client same schema)', () => {
+  const over = input({ maxBidCents: MAX_BID_CENTS + 1 });
+  const r = validateBidForm(over, claimCtx);
+  assert.equal(r.ok, false);
+  assert.match(r.errors.maxBidCents ?? '', /maximum/i);
+  const atMax = validateBidForm(input({ maxBidCents: MAX_BID_CENTS }), claimCtx);
+  assert.equal(atMax.ok, true);
+});

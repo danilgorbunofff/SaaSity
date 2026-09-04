@@ -108,6 +108,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const resolution = await resolveCycle(tx, cycle, {
       humanSubmitCents: maxBidCents,
+      humanIds: { preBidId, bidderId: bidder.bidderId },
       // Attribute the extension to this request's ledger row (or its
       // requester-attributed tick when nothing moved).
       triggeredExtension: softClose.extended ? { preBidId, bidderId: bidder.bidderId } : undefined,
@@ -117,6 +118,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       code: 'ok' as const,
       cycleId: cycle.id,
       preBidId,
+      leaderPreBidId: resolution?.leaderPreBidId ?? preBidId,
       endAt: softClose.newEndAt.toISOString(),
       extended: softClose.extended,
       priceCents: resolution?.priceCents ?? minimumNext - cycle.incrementCents,
@@ -206,7 +208,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         plotId: id,
         cycleId: result.cycleId,
         currentPriceCents: result.priceCents,
-        leaderPreBidId: result.preBidId,
+        leaderPreBidId: result.leaderPreBidId,
         isProxy: !result.isLeader,
         endAt: result.endAt,
       });

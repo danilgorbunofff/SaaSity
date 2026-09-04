@@ -21,7 +21,7 @@ export async function GET() {
   }
 
   // ACTIVE (leading an open auction) + WON (holds an active/past lease).
-  // LOST/CANCELLED/EXPIRED pre-bids must never grant ownership display.
+  // LOST/EXPIRED pre-bids must never grant ownership display.
   const preBids = await prisma.preBid.findMany({
     where: { bidderId: bidder.bidderId, status: { in: ['ACTIVE', 'WON'] } },
     select: { id: true, plotId: true, cycleId: true, status: true },

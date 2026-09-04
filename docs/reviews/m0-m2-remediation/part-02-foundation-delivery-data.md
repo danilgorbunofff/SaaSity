@@ -145,6 +145,15 @@ exact commit), but the finding's other acceptance implication — that the
 history is *reviewable* — is not met until it's split or at least reviewed
 as-is via a PR.
 
+> **Boundary note (2026-09-03):** the commit record above describes the tree
+> as of `e0ad13c`. Later work landed as further direct-to-`main` commits —
+> `76f82ea` (Part 3), `330cb53` (Part 4), `1bbe913` (Part 5), and the bundled
+> `a969e0a` (Parts 4–7 fixes, ~91 files) — plus a second `Temp` commit
+> (`a04c9b5`) between Parts 2 and 3. So "the `Temp` commit (`ac554dd`)" is no
+> longer the only such commit, and the per-workstream commit mapping is
+> superseded by the bundled `a969e0a`. The "reviewable commits" and
+> "review before merge" boxes remain honestly unticked by explicit decision.
+
 ## [High] `delivery-pipeline-unproven` — Partially resolved
 
 There is no repository evidence of a deployment URL, deployment status, checks,

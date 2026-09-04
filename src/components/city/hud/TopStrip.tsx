@@ -14,6 +14,7 @@ import { useCityStore } from '@/lib/city/store';
 import type { ConnectionState } from '@/lib/city/store';
 import { useCityValueCents, formatHudCountdown, hudNowMs } from '@/lib/city/hud-hooks';
 import { useTick } from '@/components/city/PlotSkins';
+import { useReducedMotion } from '@/lib/city/reduced-motion';
 import { formatPrice } from '@/lib/tiers';
 import type { PlotDto } from '@/types/api';
 
@@ -91,6 +92,7 @@ function ConnectionBadge() {
   const lastSyncAt = useCityStore((s) => s.lastSyncAt);
   const tick = useTick();
   void tick; // re-render at most every 5s for the sync age
+  const reduceMotion = useReducedMotion();
   const copy = CONNECTION_COPY[connection];
   const age = lastSyncAt == null ? null : formatSyncAge(lastSyncAt, hudNowMs());
   return (
@@ -108,7 +110,7 @@ function ConnectionBadge() {
     >
       <span
         aria-hidden
-        className={`inline-block h-1.5 w-1.5 rounded-full ${copy.dot}${copy.pulse ? ' animate-pulse' : ''}`}
+        className={`inline-block h-1.5 w-1.5 rounded-full ${copy.dot}${copy.pulse && !reduceMotion ? ' animate-pulse' : ''}`}
       />
       <span className="text-[9px] uppercase tracking-[0.2em] text-[#6b7a8c]">
         {copy.label}
@@ -124,6 +126,7 @@ export function TopStrip() {
   const counters = useCounters();
   const valueCents = useCityValueCents();
   const loading = useCityStore((s) => s.loading);
+  const reduceMotion = useReducedMotion();
   // Part 6 `mobile-hud-overlap`: phones get a one-line summary — secondary
   // metrics live behind a disclosure instead of wrapping over the scene.
   const [expanded, setExpanded] = useState(false);
@@ -166,7 +169,11 @@ export function TopStrip() {
           <span className="ml-2 inline-block h-2 w-2 rounded-full bg-[#ffb400]" />
           <span className="text-[10px] text-[#9fd8e6]"> outbid</span>
         </span>
-        {loading ? <span className="ml-2 animate-pulse text-[#6b7a8c]">SYNCING…</span> : null}
+        {loading ? (
+          <span className={`ml-2 text-[#6b7a8c]${reduceMotion ? '' : ' animate-pulse'}`}>
+            SYNCING…
+          </span>
+        ) : null}
         <span className="mx-2 text-[#2a3a46]">|</span>
         <ConnectionBadge />
       </span>
@@ -190,7 +197,9 @@ export function TopStrip() {
           ))}
           <span>{counters.idle} idle</span>
           <span className="text-[#ffb400]">{formatPrice(valueCents)} committed</span>
-          {loading ? <span className="animate-pulse">SYNCING…</span> : null}
+          {loading ? (
+            <span className={reduceMotion ? undefined : 'animate-pulse'}>SYNCING…</span>
+          ) : null}
           <ConnectionBadge />
         </span>
       ) : null}

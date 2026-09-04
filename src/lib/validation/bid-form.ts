@@ -58,7 +58,11 @@ export const bidFormSchema = z.object({
   targetUrl: z.string().trim().min(1, 'Target URL is required').max(2000),
   twitterHandle: z.string().trim().min(1, 'X handle is required').max(32),
   mrrText: z.string().trim().max(20, 'Max 20 characters').optional(),
-  maxBidCents: z.number().int('Whole cents only').positive('Must be a positive amount'),
+  maxBidCents: z
+    .number()
+    .int('Whole cents only')
+    .positive('Must be a positive amount')
+    .max(MAX_BID_CENTS, 'Amount exceeds the $100,000 maximum'),
 });
 
 export type BidFormInput = z.input<typeof bidFormSchema>;
@@ -185,9 +189,13 @@ export function validateBidForm(
 
   const rawMax = parsed.success ? parsed.data.maxBidCents : input.maxBidCents;
   if (typeof rawMax === 'number' && Number.isInteger(rawMax) && !errors.maxBidCents) {
-    const min = minimumBidCents(ctx.mode, ctx.tier, ctx.currentPriceCents);
-    if (rawMax < min) {
-      errors.maxBidCents = 'Must be at least $' + (min / 100).toFixed(2) + ' for this action';
+    if (rawMax > MAX_BID_CENTS) {
+      errors.maxBidCents = 'Amount exceeds the $100,000 maximum';
+    } else {
+      const min = minimumBidCents(ctx.mode, ctx.tier, ctx.currentPriceCents);
+      if (rawMax < min) {
+        errors.maxBidCents = 'Must be at least $' + (min / 100).toFixed(2) + ' for this action';
+      }
     }
   }
 

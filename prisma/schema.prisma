@@ -44,7 +44,6 @@ enum PreBidStatus {
   ACTIVE
   WON
   LOST
-  CANCELLED
   EXPIRED
 }
 
@@ -207,7 +206,9 @@ model PreBid {
   status PreBidStatus @default(ACTIVE)
 
   // Set when this pre-bid leaves ACTIVE without winning: capture_failed
-  // (cascade), expired (attach-time auth failure), cancelled.
+  // (cascade) or expired (attach-time auth failure). A cancelled auction
+  // shell (CycleStatus CANCELLED) never rewrites its rows — the rows that
+  // caused the shell to be empty were already EXPIRED by authorization.
   lostReason String?
 
   createdAt DateTime @default(now())
